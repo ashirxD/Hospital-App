@@ -26,50 +26,47 @@ export default function BookAppointment() {
   };
 
   // Fetch doctor details
- useEffect(() => {
-    const fetchDoctor = async () => {
-      setIsLoading(true);
-      setError("");
-      try {
-        const token = localStorage.getItem("token");
-        if (!token) {
-          console.log("[BookAppointmentPage] No token, redirecting to signin");
-          dispatch(logout());
-          navigate("/auth/signin", { replace: true });
-          return;
-        }
-
-        // Validate doctorId
-        if (!id || typeof id !== "string" || id.trim() === "" || !/^[0-9a-fA-F]{24}$/.test(id)) {
-          console.error("[BookAppointmentPage] Invalid doctorId:", id);
-          setError("Invalid doctor ID. Redirecting to dashboard...");
-          setTimeout(() => navigate("/patient"), 2000);
-          setIsLoading(false);
-          return;
-        }
-
-        console.log("[BookAppointmentPage] Fetching doctor:", { doctorId: id });
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/patient/doctors/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!response.ok) {
-          const text = await response.text();
-          console.error("[BookAppointmentPage] Failed to fetch doctor:", text);
-          setError("Failed to fetch doctor details");
-          setIsLoading(false);
-          return;
-        }
-        const data = await response.json();
-        setDoctor(data);
-      } catch (err) {
-        console.error("[BookAppointmentPage] Error:", err);
-        setError("Failed to connect to server");
-      } finally {
-        setIsLoading(false);
+  const fetchDoctor = async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.log("[BookAppointmentPage] No token, redirecting to signin");
+        navigate("/auth/signin", { replace: true });
+        return;
       }
-    };
-    fetchDoctor();
-  }, [id, navigate, dispatch]);
+
+      // Validate doctorId
+      if (!doctorId || !isValidDoctorId(doctorId)) {
+        console.error("[BookAppointmentPage] Invalid doctorId:", doctorId);
+        setError("Invalid doctor ID. Redirecting to dashboard...");
+        setTimeout(() => navigate("/patient-dashboard"), 2000);
+        setIsLoading(false);
+        return;
+      }
+
+      console.log("[BookAppointmentPage] Fetching doctor:", { doctorId });
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/patient/doctors/${doctorId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("[BookAppointmentPage] Failed to fetch doctor:", text);
+        setError("Failed to fetch doctor details");
+        setIsLoading(false);
+        return;
+      }
+      const data = await response.json();
+      setDoctor(data);
+    } catch (err) {
+      console.error("[BookAppointmentPage] Error:", err);
+      setError("Failed to connect to server");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Fetch available slots
   const fetchAvailableSlots = async (date) => {
@@ -79,7 +76,7 @@ export default function BookAppointment() {
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(
-        `http://localhost:5000/api/patient/doctors/${doctorId}/slots?date=${date}`,
+        `${import.meta.env.VITE_API_URL}/api/patient/doctors/${doctorId}/slots?date=${date}`,
         {
           method: "GET",
           headers: {
@@ -89,13 +86,12 @@ export default function BookAppointment() {
       );
 
       const data = await response.json();
-      console.log("[fetchAvailableSlots] Response:", JSON.stringify(data, null, 2));
+      console.log("[fetchAvailableSlots] Response:", data);
 
       if (!response.ok) {
         console.error("[fetchAvailableSlots] Failed:", data.message);
         setError(data.message || "Failed to fetch available slots");
         setAvailableSlots([]);
-        setIsSlotsLoading(false);
         return;
       }
 
@@ -122,7 +118,7 @@ export default function BookAppointment() {
       }
 
       console.log("[fetchRequestStatus] Fetching status for requestId:", reqId);
-      const response = await fetch("http://localhost:5000/api/patient/appointments", {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/patient/appointments`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -130,7 +126,7 @@ export default function BookAppointment() {
       });
 
       const data = await response.json();
-      console.log("[fetchRequestStatus] Response:", JSON.stringify(data, null, 2));
+      console.log("[fetchRequestStatus] Response:", data);
 
       if (!response.ok) {
         console.error("[fetchRequestStatus] Failed:", data.message);
@@ -221,6 +217,7 @@ export default function BookAppointment() {
 
       const { doctorId, date, time, reason } = appointmentData;
       console.log("[handleBookAppointment] Submitting:", { doctorId, date, time, reason });
+      
       if (!doctorId || !date || !time || !reason) {
         console.error("[handleBookAppointment] Validation failed: All fields required");
         setError("Please fill in all fields.");
@@ -235,7 +232,7 @@ export default function BookAppointment() {
         return;
       }
 
-      const response = await fetch("http://localhost:5000/api/patient/appointment/request", {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/patient/appointment/request`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -245,7 +242,7 @@ export default function BookAppointment() {
       });
 
       const data = await response.json();
-      console.log("[handleBookAppointment] Response:", JSON.stringify(data, null, 2));
+      console.log("[handleBookAppointment] Response:", data);
 
       if (!response.ok) {
         console.error("[handleBookAppointment] Failed:", data.message);

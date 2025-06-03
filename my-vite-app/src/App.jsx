@@ -19,31 +19,20 @@ import AvailabilityContext from './context/AvailabilityContext';
 import ErrorBoundary from './pages/Components/ErrorBoundary.jsx';
 
 // ProtectedRoute
+// App.jsx
 function ProtectedRoute({ children, allowedRole }) {
   const dispatch = useDispatch();
   const { isAuthenticated, role: reduxRole } = useSelector((state) => state.auth);
   const [userRole, setUserRole] = React.useState(null);
   const [isLoading, setIsLoading] = React.useState(true);
 
-  console.log("[ProtectedRoute] Initial state:", {
-    isAuthenticated,
-    reduxRole,
-    userRole,
-    isLoading,
-    allowedRole,
-    token: localStorage.getItem("token")?.slice(0, 20) + "..." || "none",
-    path: window.location.pathname,
-    timestamp: new Date().toISOString(),
-  });
-
   React.useEffect(() => {
     let isMounted = true;
     const verifyToken = async () => {
       const token = localStorage.getItem("token");
-      console.log("[ProtectedRoute] Token:", { exists: !!token, token: token?.slice(0, 20) + "..." || "none" });
+      console.log("[ProtectedRoute] Verifying token for path:", window.location.pathname, "token:", token?.slice(0, 20) + "...");
       if (!token) {
-        console.log("[ProtectedRoute] No token, redirecting to signin");
-        dispatch(logout());
+        console.log("[ProtectedRoute] No token, will redirect to signin");
         if (isMounted) setIsLoading(false);
         return;
       }
@@ -78,16 +67,12 @@ function ProtectedRoute({ children, allowedRole }) {
               message: data.message || "Invalid response",
               status: response.status,
             });
-            localStorage.removeItem("token");
-            dispatch(verifyTokenFailure(data.message || "Authentication failed"));
             setUserRole(null);
           }
         }
       } catch (err) {
         console.error("[ProtectedRoute] Error:", { message: err.message });
-        localStorage.removeItem("token");
-        dispatch(verifyTokenFailure(err.message || "Server error"));
-        if (isMounted) setUserRole(null);
+        setUserRole(null);
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -100,21 +85,26 @@ function ProtectedRoute({ children, allowedRole }) {
   }, [dispatch, allowedRole]);
 
   if (isLoading) {
-    console.log("[ProtectedRoute] Loading");
+    console.log("[ProtectedRoute] Loading for:", window.location.pathname);
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
   if (!isAuthenticated || !userRole || userRole !== allowedRole) {
-    console.log("[ProtectedRoute] Authentication failed:", {
+    console.log("[ProtectedRoute] Authentication failed, redirecting to /auth/signin", {
       isAuthenticated,
       userRole,
       requiredRole: allowedRole,
-      redirectingTo: "/auth/signin",
+      path: window.location.pathname,
     });
-    return <Navigate to="/auth/signin" replace />;
+    // Delay redirect to catch logs
+    setTimeout(() => {
+      dispatch(logout());
+      window.location.href = "/auth/signin"; // Force full redirect to ensure logs are visible
+    }, 1000);
+    return <div>Redirecting to signin...</div>;
   }
 
-  console.log("[ProtectedRoute] Rendering children");
+  console.log("[ProtectedRoute] Rendering children for:", window.location.pathname);
   return children;
 }
 
@@ -142,6 +132,8 @@ function AuthRedirect({ children }) {
 }
 
 // RedirectHandler
+// RedirectHandler
+// App.jsx
 function RedirectHandler() {
   const location = useLocation();
   const path = location.pathname.toLowerCase();
@@ -154,7 +146,7 @@ function RedirectHandler() {
     timestamp: new Date().toISOString(),
   });
 
-  if (path === '/doctor-dashboard' || path === '/doctor-dashboard/') {
+  if (path === "/doctor-dashboard" || path === "/doctor-dashboard/") {
     console.log("[RedirectHandler] Exact match for /doctor-dashboard");
     return (
       <ProtectedRoute allowedRole="doctor">
@@ -162,7 +154,15 @@ function RedirectHandler() {
       </ProtectedRoute>
     );
   }
-  if (path === '/patient-dashboard' || path === '/patient-dashboard/') {
+  if (path.startsWith("/doctor-dashboard/appointment")) {
+    console.log("[RedirectHandler] Handling /doctor-dashboard/appointment/*");
+    return (
+      <ProtectedRoute allowedRole="doctor">
+        <DoctorDashboard />
+      </ProtectedRoute>
+    );
+  }
+  if (path === "/patient-dashboard" || path === "/patient-dashboard/") {
     console.log("[RedirectHandler] Exact match for /patient-dashboard");
     return (
       <ProtectedRoute allowedRole="patient">
@@ -170,18 +170,26 @@ function RedirectHandler() {
       </ProtectedRoute>
     );
   }
+  if (path.startsWith("/patient-dashboard/appointments")) {
+    console.log("[RedirectHandler] Handling /patient-dashboard/appointments/*");
+    return (
+      <ProtectedRoute allowedRole="patient">
+        <PatientDashboard />
+      </ProtectedRoute>
+    );
+  }
 
-  if (path.startsWith('/doctor-dashboard')) {
+  if (path.startsWith("/doctor-dashboard")) {
     console.log("[RedirectHandler] Path starts with /doctor-dashboard, redirecting to /doctor-dashboard");
     return <Navigate to="/doctor-dashboard" replace />;
   }
-  if (path.startsWith('/patient-dashboard')) {
+  if (path.startsWith("/patient-dashboard")) {
     console.log("[RedirectHandler] Path starts with /patient-dashboard, redirecting to /patient-dashboard");
     return <Navigate to="/patient-dashboard" replace />;
   }
 
   if (isAuthenticated && role) {
-    const redirectTo = role === 'doctor' ? '/doctor-dashboard' : '/patient-dashboard';
+    const redirectTo = role === "doctor" ? "/doctor-dashboard" : "/patient-dashboard";
     console.log("[RedirectHandler] Authenticated user with invalid path, redirecting to:", redirectTo);
     return <Navigate to={redirectTo} replace />;
   }

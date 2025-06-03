@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Routes, Route, useLocation } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { logout } from "../redux/slices/authSlice";
-import io from "socket.io-client";
+import io from "socket.io-client"
 import {
   PatientSidebar,
   PatientHeader,
@@ -10,8 +10,12 @@ import {
   MedicalRecordsSection,
   EditProfileSection,
   DoctorsSection,
+
+  DoctorSlotsPage,
 } from "./Components/PatientComponents";
 import { PatientChat } from "./Components/PatientChat";
+import ResponseDetail from "./Components/ResponseDetails";
+
 
 // Log API URL for debugging
 console.log("[PatientDashboard] VITE_API_URL:", import.meta.env.VITE_API_URL);
@@ -49,6 +53,8 @@ function debounce(func, wait) {
     timeout = setTimeout(() => func(...args), wait);
   };
 }
+
+
 
 export default function PatientDashboard() {
   console.log("[PatientDashboard] Rendering");
@@ -800,60 +806,139 @@ export default function PatientDashboard() {
     });
   };
 
+  // Update handleSectionChange function
+  const handleSectionChange = (section) => {
+    console.log("[handleSectionChange] Changing section to:", section);
+    setActiveSection(section);
+    
+    // Force navigation to the correct route
+    switch (section) {
+      case "appointments":
+        navigate("/patient-dashboard", { replace: true });
+        break;
+      case "medicalRecords":
+        navigate("/patient-dashboard/medical-records", { replace: true });
+        break;
+      case "doctors":
+        navigate("/patient-dashboard/doctors", { replace: true });
+        break;
+      case "edit-profile":
+        navigate("/patient-dashboard/edit-profile", { replace: true });
+        break;
+      case "chat":
+        navigate("/patient-dashboard/chat", { replace: true });
+        break;
+      default:
+        navigate("/patient-dashboard", { replace: true });
+    }
+  };
+
   // Render appointments table
   const renderAppointmentsTable = () => {
-    if (!Array.isArray(appointments)) {
-      console.error("[renderAppointmentsTable] Invalid appointments:", appointments);
+    if (appointments.length === 0) {
       return (
-        <div className="text-red-600 bg-red-100 border border-red-400 rounded p-3">
-          Error: Invalid appointments data
-        </div>
+        <p className="text-gray-600 bg-gray-100 border border-gray-200 rounded p-3">
+          No appointments found.
+        </p>
       );
     }
+
     return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full bg-white rounded-lg shadow">
-          <thead>
-            <tr className="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
-              <th className="py-4 px-6 text-left">Doctor</th>
-              <th className="py-4 px-6 text-left">Date</th>
-              <th className="py-4 px-6 text-left">Time</th>
-              <th className="py-4 px-6 text-left">Reason</th>
-              <th className="py-4 px-6 text-left">Status</th>
+      <div className="overflow-x-auto bg-white rounded-lg border border-gray-200 shadow-sm">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Doctor
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Date
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Time
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Status
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Reason
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Actions
+              </th>
             </tr>
           </thead>
-          <tbody className="text-gray-600 text-sm font-light">
-            {appointments.map((appointment, index) => {
-              const key = appointment?._id || `appt-${index}-${Date.now()}`;
-              return (
-                <tr
-                  key={key}
-                  className="border-b border-gray-200 even:bg-gray-50 hover:bg-gray-100"
-                >
-                  <td className="py-4 px-6 font-semibold">
-                    {appointment?.doctor?.name || "Unknown Doctor"}
-                  </td>
-                  <td className="py-4 px-6">
-                    {appointment?.date
-                      ? new Date(appointment.date).toISOString().split("T")[0]
-                      : "N/A"}
-                  </td>
-                  <td className="py-4 px-6 text-teal-600">
-                    {appointment?.time || "N/A"}
-                  </td>
-                  <td className="py-4 px-6">{appointment?.reason || "N/A"}</td>
-                  <td className="py-4 px-6">{appointment?.status || "N/A"}</td>
-                </tr>
-              );
-            })}
+          <tbody className="bg-white divide-y divide-gray-200">
+            {appointments.map((appointment) => (
+              <tr key={appointment._id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {appointment.doctor?.name || "Unknown"}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {appointment.date ? new Date(appointment.date).toISOString().split('T')[0] : 'N/A'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {appointment.time}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  <span
+                    className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                      appointment.status === "accepted"
+                        ? "bg-green-100 text-green-800"
+                        : appointment.status === "rejected"
+                        ? "bg-red-100 text-red-800"
+                        : appointment.status === "pending"
+                        ? "bg-yellow-100 text-yellow-800"
+                        : appointment.status === "attended" || appointment.status === "completed"
+                        ? "bg-blue-100 text-blue-800"
+                        : appointment.status === "cancelled"
+                        ? "bg-red-100 text-red-800"
+                        : appointment.status === "absent"
+                        ? "bg-gray-100 text-gray-800"
+                        : "bg-gray-100 text-gray-800"
+                    }`}
+                  >
+                    {appointment.status === "attended" || appointment.status === "completed"
+                      ? "completed"
+                      : appointment.status}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {appointment.reason}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <button
+                    onClick={() => navigate(`/patient-dashboard/appointments/${appointment._id}`)}
+                    className="text-blue-600 hover:text-blue-800"
+                    title="View Details"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
     );
   };
 
-  // Render content
+  // Update renderContent function
   const renderContent = () => {
+    console.log("[renderContent] Rendering, current path:", window.location.pathname);
     if (isLoading) {
       return (
         <div className="flex justify-center items-center h-64">
@@ -862,85 +947,82 @@ export default function PatientDashboard() {
       );
     }
 
-    switch (activeSection) {
-      case "appointments":
-        return (
-          <ErrorBoundary>
-            <AppointmentsSection
-              error={error}
-              appointmentsTable={renderAppointmentsTable()}
-              setActiveSection={setActiveSection}
-              timeFilter={timeFilter}
-              statusFilter={statusFilter}
-              doctorFilter={doctorFilter}
-              handleFilterChange={handleFilterChange}
-              clearFilters={clearFilters}
-              doctors={doctors}
+    return (
+      <ErrorBoundary>
+        <div className="relative">
+          <Routes>
+            <Route path="/appointments/:id" element={<ResponseDetail />} />
+            <Route
+              path="*"
+              element={
+                <div className={window.location.pathname.includes('/appointments/') ? 'w-1/5' : 'w-full'}>
+                  {activeSection === "appointments" && (
+                    <AppointmentsSection
+                      error={error}
+                      appointmentsTable={renderAppointmentsTable()}
+                      setActiveSection={setActiveSection}
+                      timeFilter={timeFilter}
+                      statusFilter={statusFilter}
+                      doctorFilter={doctorFilter}
+                      handleFilterChange={handleFilterChange}
+                      clearFilters={clearFilters}
+                      doctors={doctors}
+                      navigate={navigate}
+                    />
+                  )}
+                  {activeSection === "doctors" && (
+                    <DoctorsSection
+                      doctors={doctors}
+                      error={error}
+                      navigate={navigate}
+                    />
+                  )}
+                  {activeSection === "edit-profile" && (
+                    <EditProfileSection
+                      success={success}
+                      error={error}
+                      editData={editData}
+                      handleInputChange={handleInputChange}
+                      handleFileChange={handleFileChange}
+                      handleRemovePicture={handleRemovePicture}
+                      handleProfileUpdate={handleProfileUpdate}
+                      isLoading={isLoading}
+                      hasProfilePicture={hasProfilePicture}
+                      previewUrl={previewUrl}
+                      userData={userData}
+                    />
+                  )}
+                  {activeSection === "chat" && (
+                    <PatientChat userData={userData} socket={socket} appointments={appointments} />
+                  )}
+                </div>
+              }
             />
-          </ErrorBoundary>
-        );
-      case "medicalRecords":
-        return (
-          <ErrorBoundary>
-            <MedicalRecordsSection medicalRecords={medicalRecords} error={error} />
-          </ErrorBoundary>
-        );
-      case "doctors":
-        return (
-          <ErrorBoundary>
-            <DoctorsSection doctors={doctors} error={error} navigate={navigate} />
-          </ErrorBoundary>
-        );
-      case "edit-profile":
-        return (
-          <ErrorBoundary>
-            <EditProfileSection
-              success={success}
-              error={error}
-              editData={editData}
-              handleInputChange={handleInputChange}
-              handleFileChange={handleFileChange}
-              handleRemovePicture={handleRemovePicture}
-              handleProfileUpdate={handleProfileUpdate}
-              isLoading={isLoading}
-              hasProfilePicture={hasProfilePicture}
-              previewUrl={previewUrl}
-              userData={userData}
-            />
-          </ErrorBoundary>
-        );
-      case "chat":
-        return (
-          <ErrorBoundary>
-            <PatientChat userData={userData} socket={socket} doctors={doctors} />
-          </ErrorBoundary>
-        );
-      default:
-        return (
-          <div className="text-gray-600">
-            Invalid section selected. Please choose a valid section.
-          </div>
-        );
-    }
+          </Routes>
+        </div>
+      </ErrorBoundary>
+    );
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 flex">
-      <style jsx>{`
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
+      <style>
+        {`
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+              transform: translateY(-10px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
           }
-          to {
-            opacity: 1;
-            transform: translateY(0);
+          .animate-fade-in {
+            animation: fadeIn 0.3s ease-out;
           }
-        }
-        .animate-fade-in {
-          animation: fadeIn 0.3s ease-out;
-        }
-      `}</style>
+        `}
+      </style>
       <PatientSidebar
         activeSection={activeSection}
         setActiveSection={setActiveSection}

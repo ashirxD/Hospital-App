@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   CalendarIcon,
   UserGroupIcon,
@@ -8,7 +8,10 @@ import {
   ClipboardDocumentListIcon,
   BellIcon,
   ChatBubbleLeftRightIcon,
+  InformationCircleIcon,
 } from "@heroicons/react/24/outline";
+
+import { useNavigate } from "react-router-dom";
 
 
 export const Sidebar = ({ activeSection, setActiveSection, handleLogout }) => {
@@ -156,9 +159,9 @@ export const Header = ({
 
 
 // Appointments Table Component
-export const AppointmentsTable = React.memo(({ appointments = [], error }) => {
-  console.log("[AppointmentsTable] Rendering, appointments:", appointments);
 
+export const AppointmentsTable = React.memo(({ appointments = [], error, normalizeTime, onViewDetails }) => {
+  console.log("[AppointmentsTable] Rendering, appointments:", appointments);
   if (!Array.isArray(appointments)) {
     console.error("[AppointmentsTable] Invalid appointments prop:", appointments);
     return (
@@ -186,13 +189,16 @@ export const AppointmentsTable = React.memo(({ appointments = [], error }) => {
                 <th className="py-4 px-6 text-left">Patient</th>
                 <th className="py-4 px-6 text-left">Date</th>
                 <th className="py-4 px-6 text-left">Time</th>
+                <th className="py-4 px-6 text-left">Status</th>
                 <th className="py-4 px-6 text-left">Reason</th>
+                <th className="py-4 px-6 text-left">Actions</th>
               </tr>
             </thead>
             <tbody className="text-gray-600 text-sm font-light">
               {appointments.map((appointment, index) => {
                 console.log("[AppointmentsTable] Appointment:", index, appointment);
                 const key = appointment?._id || `appt-${index}-${Date.now()}`;
+                const displayStatus = appointment?.status === "attended" ? "completed" : appointment?.status || "N/A";
                 return (
                   <tr
                     key={key}
@@ -209,7 +215,40 @@ export const AppointmentsTable = React.memo(({ appointments = [], error }) => {
                     <td className="py-4 px-6 text-teal-600">
                       {appointment?.time || "N/A"}
                     </td>
+                    <td className="py-4 px-6">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          appointment?.status === "accepted"
+                            ? "bg-green-100 text-green-800"
+                            : appointment?.status === "rejected"
+                            ? "bg-red-100 text-red-800"
+                            : appointment?.status === "pending"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : appointment?.status === "attended"
+                            ? "bg-blue-100 text-blue-800"
+                            : appointment?.status === "cancelled"
+                            ? "bg-red-100 text-red-800"
+                            : appointment?.status === "absent"
+                            ? "bg-gray-100 text-gray-800"
+                            : "bg-gray-100 text-gray-800"
+                        }`}
+                      >
+                        {displayStatus}
+                      </span>
+                    </td>
                     <td className="py-4 px-6">{appointment?.reason || "N/A"}</td>
+                    <td className="py-4 px-6">
+                      <button
+                        onClick={() => {
+                          console.log("[AppointmentsTable] Viewing details for:", appointment._id);
+                          onViewDetails(appointment._id);
+                        }}
+                        className="px-3 py-1 bg-gray-400 text-white rounded hover:bg-gray-500 transition"
+                        title="View Details"
+                      >
+                        <InformationCircleIcon className="w-5 h-5" />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -222,45 +261,120 @@ export const AppointmentsTable = React.memo(({ appointments = [], error }) => {
 });
 
 // Patients List Component
-export const PatientsList = ({ uniquePatients = [], error }) => {
-  console.log("[PatientsList] Rendering, uniquePatients:", uniquePatients);
+export const PatientsList = ({ uniquePatients = [], error: propError }) => {
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const fetchPatients = async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const token = localStorage.getItem("token");
+        if (!token) {
+          throw new Error("No authentication token found");
+        }
+
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/doctor/patients`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Failed to fetch patients");
+        }
+
+        const data = await response.json();
+        console.log("[PatientsList] Fetched patients:", data);
+        setPatients(data);
+      } catch (err) {
+        console.error("[PatientsList] Error fetching patients:", err);
+        setError(err.message || "Failed to fetch patients");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPatients();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h3 className="text-2xl font-semibold text-gray-800 mb-4">My Patients</h3>
-      {error && (
+      {(error || propError) && (
         <p className="text-red-600 bg-red-100 border border-red-400 rounded p-3 mb-4 animate-fade-in">
-          {error}
+          {error || propError}
         </p>
       )}
-      {uniquePatients.length === 0 ? (
-        <p className="text-gray-600">No patients with upcoming appointments.</p>
+      {patients.length === 0 ? (
+        <p className="text-gray-600">No patients with appointments.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {uniquePatients.map((patient) => (
+          {patients.map((patient) => (
             <div
               key={patient?._id || `patient-${Date.now()}`}
-              className="flex border border-gray-300 rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition"
+              className="flex flex-col border border-gray-300 rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition"
             >
-              <div className="w-24 h-24 mr-5">
-                {patient?.profilePicture ? (
-                  <img
-                    src={`${import.meta.env.VITE_API_URL}${patient.profilePicture}?t=${Date.now()}`}
-                    alt={`${patient.name || "Patient"}'s profile`}
-                    className="w-full h-full object-cover rounded-full"
-                    onError={(e) => {
-                      e.target.style.display = "none";
-                      console.error("[PatientsList] Image error:", patient.profilePicture, e);
-                    }}
-                  />
-                ) : (
-                  <div className="w-full h-full bg-gray-100 rounded-full"></div>
-                )}
+              <div className="flex items-start space-x-4">
+                <div className="w-20 h-20 flex-shrink-0">
+                  {patient?.profilePicture ? (
+                    <img
+                      src={`${import.meta.env.VITE_API_URL}${patient.profilePicture}?t=${Date.now()}`}
+                      alt={`${patient.name || "Patient"}'s profile`}
+                      className="w-full h-full object-cover rounded-full"
+                      onError={(e) => {
+                        e.target.style.display = "none";
+                        console.error("[PatientsList] Image error:", patient.profilePicture, e);
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gray-100 rounded-full flex items-center justify-center">
+                      <span className="text-2xl text-gray-400">
+                        {patient?.name?.charAt(0) || "?"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-lg font-semibold text-gray-800 truncate">
+                    {patient?.name || "Unknown"}
+                  </h4>
+                  <p className="text-sm text-gray-600 truncate">
+                    Email: {patient?.email || "N/A"}
+                  </p>
+                  <p className="text-sm text-gray-600 truncate">
+                    Phone: {patient?.phoneNumber || "N/A"}
+                  </p>
+                </div>
               </div>
-              <div className="flex-1">
-                <h4 className="text-lg font-semibold text-gray-800">{patient?.name || "Unknown"}</h4>
-                <p className="text-sm text-gray-600">Email: {patient?.email || "N/A"}</p>
-                <p className="text-sm text-gray-600">Phone: {patient?.phoneNumber || "N/A"}</p>
-              </div>
+              {patient?.lastAppointment && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <h5 className="text-sm font-medium text-gray-700 mb-2">Last Appointment</h5>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-gray-500">Date:</span>
+                      <span className="ml-2 text-gray-800">
+                        {new Date(patient.lastAppointment.date).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Time:</span>
+                      <span className="ml-2 text-gray-800">{patient.lastAppointment.time}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -7,31 +7,31 @@ const { generateOTP } = require('../utils/otpUtils');
 const router = express.Router();
 
 // Test Email Route
-router.get('/test-email', async (req, res) => {
-  try {
-    console.log('Testing email with:', {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS ? '**** (hidden)' : 'undefined',
-    });
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: process.env.EMAIL_USER,
-      subject: 'Test Email from NodeMailer',
-      text: 'This is a test email to verify NodeMailer configuration.',
-    };
-    const info = await transporter.sendMail(mailOptions);
-    console.log('Test email sent:', info);
-    res.json({ message: 'Test email sent successfully', info });
-  } catch (err) {
-    console.error('Test email error:', {
-      message: err.message,
-      code: err.code,
-      response: err.response,
-      responseCode: err.responseCode,
-    });
-    res.status(500).json({ message: 'Failed to send test email', error: err.message });
-  }
-});
+// router.get('/test-email', async (req, res) => {
+//   try {
+//     console.log('Testing email with:', {
+//       user: process.env.EMAIL_USER,
+//       pass: process.env.EMAIL_PASS ? '**** (hidden)' : 'undefined',
+//     });
+//     const mailOptions = {
+//       from: process.env.EMAIL_USER,
+//       to: process.env.EMAIL_USER,
+//       subject: 'Test Email from NodeMailer',
+//       text: 'This is a test email to verify NodeMailer configuration.',
+//     };
+//     const info = await transporter.sendMail(mailOptions);
+//     console.log('Test email sent:', info);
+//     res.json({ message: 'Test email sent successfully', info });
+//   } catch (err) {
+//     console.error('Test email error:', {
+//       message: err.message,
+//       code: err.code,
+//       response: err.response,
+//       responseCode: err.responseCode,
+//     });
+//     res.status(500).json({ message: 'Failed to send test email', error: err.message });
+//   }
+// });
 
 // Verify Email Route
 router.post('/verify-email', async (req, res) => {

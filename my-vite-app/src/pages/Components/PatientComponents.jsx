@@ -1,5 +1,5 @@
 import { useParams, useLocation, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import moment from "moment";
 import { useDispatch } from "react-redux";
 import { logout } from "../../redux/slices/authSlice";
@@ -220,6 +220,7 @@ export function AppointmentsSection({
   handleFilterChange,
   clearFilters,
   doctors,
+  navigate, // Add navigate prop
 }) {
   console.log("[AppointmentsSection] Rendering, filters:", { timeFilter, statusFilter, doctorFilter });
   return (
@@ -295,6 +296,10 @@ export function AppointmentsSection({
                 <option value="accepted">Accepted</option>
                 <option value="rejected">Rejected</option>
                 <option value="pending">Pending</option>
+                <option value="attended">Completed</option>
+                {/* <option value="completed">Completed</option> */}
+                <option value="cancelled">Cancelled</option>
+                <option value="absent">Absent</option>
               </select>
             </div>
             <div>
@@ -613,10 +618,6 @@ function SlotCard({ date, slot, doctorId, navigate }) {
 }
 
 // Doctor Slots Page
-// Doctor Slots Page
-// Doctor Slots Page
-
-// Doctor Slots Page
 export function DoctorSlotsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -624,21 +625,155 @@ export function DoctorSlotsPage() {
   const [slots, setSlots] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(moment().format("YYYY-MM-DD"));
   const [sliderDates, setSliderDates] = useState([]);
   const dispatch = useDispatch();
+  const sliderRef = useRef(null);
 
+  // Add handleLogout function
+  const handleLogout = () => {
+    dispatch(logout());
+    navigate("/auth/signin", { replace: true });
+  };
+
+  // Add handleSectionChange function
+  const handleSectionChange = (section) => {
+    switch (section) {
+      case "appointments":
+        navigate("/patient");
+        break;
+      case "medicalRecords":
+        navigate("/patient/medical-records");
+        break;
+      case "doctors":
+        navigate("/patient/doctors");
+        break;
+      case "edit-profile":
+        navigate("/patient/edit-profile");
+        break;
+      case "chat":
+        navigate("/patient/chat");
+        break;
+      default:
+        navigate("/patient");
+    }
+  };
+
+  // Extend sliderDates when user clicks forward and reaches the end
+  const handleSliderChange = (oldIndex, newIndex) => {
+    console.log("[DoctorSlotsPage] Slider change:", { oldIndex, newIndex, totalSlides: sliderDates.length });
+    
+    // If user is moving forward and newIndex is near the end, add more future dates
+    if (newIndex > oldIndex && sliderDates.length - newIndex <= 3) {
+      const lastDate = moment(sliderDates[sliderDates.length - 1].date, "YYYY-MM-DD");
+      const newDates = [];
+      for (let i = 1; i <= 7; i++) {
+        const date = lastDate.clone().add(i, "days");
+        newDates.push({
+          date: date.format("YYYY-MM-DD"),
+          display: date.format("ddd, MMM D"),
+        });
+      }
+      console.log("[DoctorSlotsPage] Adding new dates:", newDates);
+      setSliderDates(prev => [...prev, ...newDates]);
+    }
+  };
+
+  // Custom arrow components
+  const NextArrow = ({ onClick, currentSlide, slideCount }) => {
+    const isAtEnd = currentSlide >= slideCount - 1;
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log("[DoctorSlotsPage] Next arrow clicked:", { currentSlide, slideCount });
+          if (!isAtEnd) {
+            onClick();
+          }
+        }}
+        className={`absolute right-[-40px] top-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-full p-2 shadow-md transition-all z-10 ${
+          isAtEnd ? 'opacity-50 cursor-not-allowed' : 'hover:from-blue-600 hover:to-blue-700'
+        }`}
+        disabled={isAtEnd}
+        aria-disabled={isAtEnd}
+      >
+        <ChevronRightIcon className="w-6 h-6" />
+      </button>
+    );
+  };
+
+  // PrevArrow: pass through all props to support react-slick navigation
+  // PrevArrow: always visible, only pass onClick and type (react-slick expects type="button")
+  const PrevArrow = ({ onClick, currentSlide }) => {
+    const isAtStart = currentSlide === 0;
+    return (
+      <button
+        type="button"
+        onClick={isAtStart ? undefined : onClick}
+        className={`absolute left-[-40px] top-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-full p-2 shadow-md transition-all z-10 ${isAtStart ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'hover:from-blue-600 hover:to-blue-700'}`}
+        disabled={isAtStart}
+        aria-disabled={isAtStart}
+        tabIndex={isAtStart ? -1 : 0}
+      >
+        <ChevronLeftIcon className="w-6 h-6" />
+      </button>
+    );
+  };
+
+  // Slider settings
+  const sliderSettings = {
+    infinite: false,
+    speed: 500,
+    slidesToShow: 7,
+    slidesToScroll: 1,
+    centerMode: false,
+    centerPadding: "0",
+    arrows: true,
+    initialSlide: 0,
+    nextArrow: <NextArrow />,
+    prevArrow: <PrevArrow />,
+    beforeChange: handleSliderChange,
+    afterChange: (currentSlide) => {
+      console.log("[DoctorSlotsPage] After change:", { currentSlide, totalSlides: sliderDates.length });
+      // If we're near the end, add more dates
+      if (sliderDates.length - currentSlide <= 3) {
+        const lastDate = moment(sliderDates[sliderDates.length - 1].date, "YYYY-MM-DD");
+        const newDates = [];
+        for (let i = 1; i <= 7; i++) {
+          const date = lastDate.clone().add(i, "days");
+          newDates.push({
+            date: date.format("YYYY-MM-DD"),
+            display: date.format("ddd, MMM D"),
+          });
+        }
+        console.log("[DoctorSlotsPage] Adding new dates after change:", newDates);
+        setSliderDates(prev => [...prev, ...newDates]);
+      }
+    },
+    responsive: [
+      { breakpoint: 1024, settings: { slidesToShow: 5, centerMode: false, initialSlide: 0 } },
+      { breakpoint: 768, settings: { slidesToShow: 3, centerMode: false, initialSlide: 0 } },
+      { breakpoint: 640, settings: { slidesToShow: 1, centerMode: false, initialSlide: 0 } },
+    ],
+    ref: sliderRef,
+  };
+
+  // Add effect to handle initial dates
   useEffect(() => {
     const initialDates = [];
     const today = moment();
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 14; i++) { // Start with 14 days instead of 7
       const date = today.clone().add(i, "days");
       initialDates.push({
         date: date.format("YYYY-MM-DD"),
         display: date.format("ddd, MMM D"),
       });
     }
+    console.log("[DoctorSlotsPage] Setting initial dates:", initialDates);
     setSliderDates(initialDates);
+    setSelectedDate(today.format("YYYY-MM-DD"));
   }, []);
 
   useEffect(() => {
@@ -750,76 +885,6 @@ export function DoctorSlotsPage() {
     fetchSlotsForDate(date);
   };
 
-  // Handle slider navigation to extend dates
-  const handleSliderChange = (currentSlide, nextSlide) => {
-    const threshold = 3; // Add new dates when 3 slides from start/end
-    const totalSlides = sliderDates.length;
-
-    if (nextSlide <= threshold) {
-      // Approaching start, prepend earlier dates
-      const newDates = [];
-      const earliestDate = moment(sliderDates[0].date);
-      for (let i = 1; i <= 7; i++) {
-        const date = earliestDate.clone().subtract(i, "days");
-        newDates.unshift({
-          date: date.format("YYYY-MM-DD"),
-          display: date.format("ddd, MMM D"),
-        });
-      }
-      setSliderDates((prev) => [...newDates, ...prev]);
-    } else if (nextSlide >= totalSlides - threshold - 1) {
-      // Approaching end, append later dates
-      const newDates = [];
-      const latestDate = moment(sliderDates[sliderDates.length - 1].date);
-      for (let i = 1; i <= 7; i++) {
-        const date = latestDate.clone().add(i, "days");
-        newDates.push({
-          date: date.format("YYYY-MM-DD"),
-          display: date.format("ddd, MMM D"),
-        });
-      }
-      setSliderDates((prev) => [...prev, ...newDates]);
-    }
-  };
-
-  // Custom arrow components
-  const NextArrow = ({ onClick }) => (
-    <button
-      onClick={onClick}
-      className="absolute right-[-40px] top-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-full p-2 shadow-md hover:from-blue-600 hover:to-blue-700 transition-all z-10"
-    >
-      <ChevronRightIcon className="w-6 h-6" />
-    </button>
-  );
-
-  const PrevArrow = ({ onClick }) => (
-    <button
-      onClick={onClick}
-      className="absolute left-[-40px] top-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-full p-2 shadow-md hover:from-blue-600 hover:to-blue-700 transition-all z-10"
-    >
-      <ChevronLeftIcon className="w-6 h-6" />
-    </button>
-  );
-
-  // Slider settings
-  const sliderSettings = {
-    infinite: true,
-    speed: 500,
-    slidesToShow: 7,
-    slidesToScroll: 1,
-    centerMode: true,
-    centerPadding: "0",
-    arrows: true,
-    nextArrow: <NextArrow />,
-    prevArrow: <PrevArrow />,
-    beforeChange: handleSliderChange,
-    responsive: [
-      { breakpoint: 1024, settings: { slidesToShow: 5 } },
-      { breakpoint: 768, settings: { slidesToShow: 3 } },
-      { breakpoint: 640, settings: { slidesToShow: 1 } },
-    ],
-  };
-
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -837,94 +902,89 @@ export function DoctorSlotsPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-      <h3 className="text-3xl font-bold text-gray-900 mb-8 text-center bg-gradient-to-r from-blue-500 to-purple-600 text-transparent bg-clip-text">
-        Available Slots for Dr. {doctor?.name || "Loading..."}
-      </h3>
+    <div className="flex min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100">
+      <PatientSidebar
+        activeSection="doctors"
+        setActiveSection={handleSectionChange}
+        handleLogout={handleLogout}
+      />
+      <div className="flex-1 p-6">
+        <div className="max-w-7xl mx-auto">
+          {/* Current Date Top Right */}
+          <div className="absolute right-6 top-6 bg-blue-100 text-blue-700 px-4 py-2 rounded-lg shadow text-lg font-semibold">
+            {moment(selectedDate).format("dddd, MMMM Do YYYY")}
+          </div>
+          <h3 className="text-3xl font-bold text-gray-900 mb-6 text-center bg-gradient-to-r from-blue-500 to-purple-600 text-transparent bg-clip-text">
+            Available Slots for Dr. {doctor?.name || "Loading..."}
+          </h3>
 
-      {/* Infinite Slider */}
-      <div className="mb-8 relative">
-        <Slider {...sliderSettings}>
-          {sliderDates.map((item) => (
-            <div key={item.date} className="px-2">
-              <button
-                onClick={() => handleDateSelect(item.date)}
-                className={`w-full p-3 rounded-lg text-center transition-all duration-200 ${
-                  selectedDate === item.date
-                    ? "bg-blue-600 text-white shadow-lg"
-                    : "bg-gray-100 text-gray-800 hover:bg-gray-200"
-                }`}
-              >
-                {item.display}
-              </button>
-            </div>
-          ))}
-        </Slider>
-      </div>
-
-      {/* Clear Filter Button */}
-      {selectedDate && (
-        <div className="mb-6 text-center">
-          <button
-            onClick={() => setSelectedDate(null)}
-            className="px-4 py-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition"
-          >
-            Clear Date Filter
-          </button>
-        </div>
-      )}
-
-      {/* Slots Display */}
-      {Object.keys(slots).length === 0 || Object.values(slots).every((slotsForDate) => slotsForDate.length === 0) ? (
-        <p className="text-gray-600 text-center text-lg">No available slots for the next 7 days.</p>
-      ) : (
-        <div className="space-y-8">
-          {Object.entries(slots)
-            .filter(([date, slotsForDate]) => {
-              // Show days with slots and match selectedDate if set
-              return (
-                Array.isArray(slotsForDate) &&
-                slotsForDate.length > 0 &&
-                (!selectedDate || selectedDate === date)
-              );
-            })
-            .map(([date, slotsForDate]) => {
-              // Validate date format
-              if (!moment(date, "YYYY-MM-DD", true).isValid()) {
-                console.warn("[DoctorSlotsPage] Invalid date key:", date);
-                return null;
-              }
-              return (
-                <div key={date} className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-                  <h4 className="text-xl font-semibold text-gray-800 mb-6">
-                    {moment(date).format("dddd, MMMM Do YYYY")}
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {slotsForDate.map((slot, index) => (
-                      <SlotCard
-                        key={`${date}-${slot.start}-${index}`}
-                        date={date}
-                        slot={slot}
-                        doctorId={id}
-                        navigate={navigate}
-                      />
-                    ))}
-                  </div>
+          {/* Slider for today + next 6 days only */}
+          <div className="mb-6 relative">
+            <Slider ref={sliderRef} {...sliderSettings}>
+              {sliderDates.map((item) => (
+                <div key={item.date} className="px-2">
+                  <button
+                    onClick={() => handleDateSelect(item.date)}
+                    className={`w-full p-2 rounded-lg text-center transition-all duration-200 ${
+                      selectedDate === item.date
+                        ? "bg-blue-600 text-white shadow-lg"
+                        : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                    }`}
+                  >
+                    {item.display}
+                  </button>
                 </div>
-              );
-            })}
+              ))}
+            </Slider>
+          </div>
+
+          {/* Slots Display */}
+          {Object.keys(slots).length === 0 || Object.values(slots).every((slotsForDate) => slotsForDate.length === 0) ? (
+            <p className="text-gray-600 text-center text-lg">No available slots for the next 7 days.</p>
+          ) : (
+            <div className="space-y-6">
+              {Object.entries(slots)
+                .filter(([date, slotsForDate]) => {
+                  return (
+                    Array.isArray(slotsForDate) &&
+                    slotsForDate.length > 0 &&
+                    selectedDate === date
+                  );
+                })
+                .map(([date, slotsForDate]) => {
+                  if (!moment(date, "YYYY-MM-DD", true).isValid()) {
+                    console.warn("[DoctorSlotsPage] Invalid date key:", date);
+                    return null;
+                  }
+                  return (
+                    <div key={date} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                      <h4 className="text-xl font-semibold text-gray-800 mb-4">
+                        {moment(date).format("dddd, MMMM Do YYYY")}
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {slotsForDate.map((slot, index) => (
+                          <SlotCard
+                            key={`${date}-${slot.start}-${index}`}
+                            date={date}
+                            slot={slot}
+                            doctorId={id}
+                            navigate={navigate}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-
-
-
 // Book Appointment Page
 // In PatientComponents.jsx
-
 
 // In PatientComponents.jsx
 
@@ -1140,3 +1200,5 @@ export function BookAppointmentPage() {
     </div>
   );
 }
+
+console.log("[BookAppointmentPage] react-icons imported:", { FaCheckCircle, FaExclamationCircle });

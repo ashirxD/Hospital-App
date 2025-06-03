@@ -1,1 +1,30 @@
 @import "tailwindcss";
+
+.slick-slider-custom {
+  position: relative;
+  width: 100%;
+  overflow: visible;
+  padding: 40px 20px;
+}
+.slick-slider-custom .slick-list {
+  margin: 0 -8px;
+}
+.slick-slider-custom .slick-slide {
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+.slick-slider-custom .slick-track {
+  display: flex;
+  align-items: center;
+}
+.slick-slider-custom .slick-arrow {
+  z-index: 20;
+  width: 40px;
+  height: 40px;
+}
+.slick-prev {
+  left: -40px;
+}
+.slick-next {
+  right: -40px;
+}

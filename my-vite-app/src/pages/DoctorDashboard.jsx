@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { logout, setAvailability as setReduxAvailability } from "../redux/slices/authSlice";
+import { Routes, Route } from "react-router-dom";
 import { useAvailability } from "../context/AvailabilityContext";
 import { DoctorChat } from "./Components/DoctorChat";
 import io from "socket.io-client";
@@ -14,11 +15,10 @@ import {
   EditProfileForm,
   NotificationsList,
 } from "./Components/DoctorComponents";
+import AppointmentDetails from "./Components/AppointmentDetails";
 
-// Log API URL for debugging
 console.log("[DoctorDashboard] VITE_API_URL:", import.meta.env.VITE_API_URL);
 
-// Error Boundary Component
 class ErrorBoundary extends React.Component {
   state = { hasError: false, error: null };
 
@@ -43,7 +43,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// Debounce utility
 function debounce(func, wait) {
   let timeout;
   return (...args) => {
@@ -80,11 +79,11 @@ export default function DoctorDashboard() {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [socketStatus, setSocketStatus] = useState("disconnected");
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState(null); // New state
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const reduxUser = useSelector((state) => state.auth.user) || null;
 
-  // Compute unread count for Header
   const unreadCount = useMemo(() => {
     const count = notifications.filter((n) => !n.read).length;
     console.log("[DoctorDashboard] Computed unreadCount:", count);
@@ -96,7 +95,6 @@ export default function DoctorDashboard() {
     console.log("[DoctorDashboard] Toggled showNotifications");
   };
 
-  // Initialize Socket.IO
   const socket = useMemo(() => {
     const token = localStorage.getItem("token")?.replace(/^Bearer\s+/i, "") || "";
     const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -112,7 +110,6 @@ export default function DoctorDashboard() {
     });
   }, []);
 
-  // Normalize time format
   const normalizeTime = (time) => {
     if (!time || typeof time !== "string" || time.trim() === "") {
       console.warn("[normalizeTime] Invalid time:", time);
@@ -127,7 +124,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Fetch user data
   const fetchUserData = async () => {
     setError("");
     try {
@@ -198,7 +194,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Fetch appointment requests
   const fetchAppointmentRequests = async () => {
     setError("");
     try {
@@ -234,7 +229,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Fetch appointments
   const fetchAppointments = async () => {
     setError("");
     try {
@@ -278,7 +272,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Fetch notifications
   const fetchNotifications = async () => {
     setError("");
     try {
@@ -315,7 +308,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Mark notification as read
   const markNotificationAsRead = useCallback(async (notificationId) => {
     try {
       const token = localStorage.getItem("token");
@@ -352,7 +344,6 @@ export default function DoctorDashboard() {
     }
   }, [dispatch, navigate]);
 
-  // Mark all notifications as read
   const markAllNotificationsAsRead = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
@@ -387,7 +378,6 @@ export default function DoctorDashboard() {
     }
   }, [dispatch, navigate]);
 
-  // Debounced notification update
   const debouncedSetNotifications = useCallback(
     debounce((newNotifications) => {
       setNotifications(newNotifications);
@@ -395,7 +385,6 @@ export default function DoctorDashboard() {
     []
   );
 
-  // Token validation effect
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -404,7 +393,6 @@ export default function DoctorDashboard() {
     }
   }, [navigate]);
 
-  // Initialization effect
   useEffect(() => {
     console.log("[useEffect] Active section changed:", activeSection);
     const initialize = async () => {
@@ -428,16 +416,14 @@ export default function DoctorDashboard() {
     initialize();
   }, [activeSection, dispatch, navigate]);
 
-  // Fallback polling for notifications
   useEffect(() => {
     const interval = setInterval(() => {
       console.log("[useEffect] Polling notifications");
       fetchNotifications();
-    }, 10000); // Poll every 10 seconds
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  // Socket.IO effect
   useEffect(() => {
     console.log("[useEffect] Setting up Socket.IO", {
       reduxUserId: reduxUser?._id,
@@ -569,12 +555,10 @@ export default function DoctorDashboard() {
     };
   }, [socket, dispatch, navigate, reduxUser, userData._id, activeSection]);
 
-  // Log render loop debugging
   useEffect(() => {
     console.log("[useEffect] Render loop check - unreadCount:", unreadCount, "showNotifications:", showNotifications);
   }, [unreadCount, showNotifications]);
 
-  // Handle logout
   const handleLogout = () => {
     console.log("[handleLogout] Logging out");
     localStorage.removeItem("token");
@@ -583,7 +567,6 @@ export default function DoctorDashboard() {
     navigate("/auth/signin", { replace: true });
   };
 
-  // Handle input changes
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     console.log("[handleInputChange] Input:", { name, value, type, checked });
@@ -608,7 +591,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Handle profile picture file change
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -625,7 +607,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Handle profile picture removal
   const handleRemovePicture = async () => {
     setError("");
     setSuccess("");
@@ -675,7 +656,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Cleanup preview URL
   useEffect(() => {
     return () => {
       if (previewUrl) {
@@ -684,7 +664,6 @@ export default function DoctorDashboard() {
     };
   }, [previewUrl]);
 
-  // Handle profile update
   const handleProfileUpdate = async (e) => {
     e.preventDefault();
     setError("");
@@ -766,7 +745,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Handle accept appointment request
   const handleAcceptRequest = async (requestId) => {
     setError("");
     setSuccess("");
@@ -807,7 +785,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Handle reject appointment request
   const handleRejectRequest = async (requestId) => {
     setError("");
     setSuccess("");
@@ -848,8 +825,18 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Render content
+  const handleViewDetails = (appointmentId) => {
+    setSelectedAppointmentId(appointmentId);
+    console.log("[handleViewDetails] Selected appointment:", appointmentId);
+  };
+
+  const handleCloseDetails = () => {
+    setSelectedAppointmentId(null);
+    console.log("[handleCloseDetails] Closed appointment details");
+  };
+
   const renderContent = () => {
+    console.log("[renderContent] Rendering, current path:", window.location.pathname);
     if (isLoading) {
       return (
         <div className="flex justify-center items-center h-64">
@@ -858,69 +845,51 @@ export default function DoctorDashboard() {
       );
     }
 
-    switch (activeSection) {
-      case "appointments":
-        return (
-          <ErrorBoundary>
-            <AppointmentsTable
-              appointments={appointments}
-              error={error}
-              normalizeTime={normalizeTime}
-            />
-          </ErrorBoundary>
-        );
-      case "patients":
-        return (
-          <ErrorBoundary>
-            <PatientsList
-              appointments={appointments}
-              error={error}
-            />
-          </ErrorBoundary>
-        );
-      case "appointment-requests":
-        return (
-          <ErrorBoundary>
-            <AppointmentRequestsTable
-              appointmentRequests={appointmentRequests}
-              handleAcceptRequest={handleAcceptRequest}
-              handleRejectRequest={handleRejectRequest}
-              error={error}
-              normalizeTime={normalizeTime}
-            />
-          </ErrorBoundary>
-        );
-      case "edit-profile":
-        return (
-          <ErrorBoundary>
-            <EditProfileForm
-              editData={editData}
-              handleInputChange={handleInputChange}
-              handleFileChange={handleFileChange}
-              handleRemovePicture={handleRemovePicture}
-              handleProfileUpdate={handleProfileUpdate}
-              availability={availability}
-              previewUrl={previewUrl}
-              hasProfilePicture={hasProfilePicture}
-              isLoading={isLoading}
-              error={error}
-              success={success}
-            />
-          </ErrorBoundary>
-        );
-      case "chat":
-        return (
-          <ErrorBoundary>
-            <DoctorChat userData={userData} socket={socket} appointments={appointments} />
-          </ErrorBoundary>
-        );
-      default:
-        return (
-          <div className="text-gray-600">
-            Invalid section selected. Please choose a valid section.
-          </div>
-        );
-    }
+    return (
+      <ErrorBoundary>
+        {activeSection === "appointments" && (
+          <AppointmentsTable
+            appointments={appointments}
+            error={error}
+            normalizeTime={normalizeTime}
+            onViewDetails={handleViewDetails} // New prop
+          />
+        )}
+        {activeSection === "patients" && (
+          <PatientsList
+            appointments={appointments}
+            error={error}
+          />
+        )}
+        {activeSection === "appointment-requests" && (
+          <AppointmentRequestsTable
+            appointmentRequests={appointmentRequests}
+            handleAcceptRequest={handleAcceptRequest}
+            handleRejectRequest={handleRejectRequest}
+            error={error}
+            normalizeTime={normalizeTime}
+          />
+        )}
+        {activeSection === "edit-profile" && (
+          <EditProfileForm
+            editData={editData}
+            handleInputChange={handleInputChange}
+            handleFileChange={handleFileChange}
+            handleRemovePicture={handleRemovePicture}
+            handleProfileUpdate={handleProfileUpdate}
+            availability={availability}
+            previewUrl={previewUrl}
+            hasProfilePicture={hasProfilePicture}
+            isLoading={isLoading}
+            error={error}
+            success={success}
+          />
+        )}
+        {activeSection === "chat" && (
+          <DoctorChat userData={userData} socket={socket} appointments={appointments} />
+        )}
+      </ErrorBoundary>
+    );
   };
 
   return (
@@ -945,7 +914,7 @@ export default function DoctorDashboard() {
         setActiveSection={setActiveSection}
         handleLogout={handleLogout}
       />
-      <div className="flex-1 p-8">
+      <div className="flex-1 p-8 relative">
         <div className="max-w-6xl mx-auto">
           <Header
             userData={userData}
@@ -957,11 +926,26 @@ export default function DoctorDashboard() {
             markNotificationAsRead={markNotificationAsRead}
             markAllNotificationsAsRead={markAllNotificationsAsRead}
             socketStatus={socketStatus}
+            availability={availability} // Pass availability
           />
           <div className="text-sm text-gray-600 mb-4">
             Socket Status: <span className={socketStatus === "authenticated" ? "text-green-600" : "text-red-600"}>{socketStatus}</span>
           </div>
           {renderContent()}
+          {selectedAppointmentId && (
+            <>
+              {/* Only cover the left 20vw with the overlay, leave 20vw on the right visible */}
+              <div
+                className="fixed inset-0 z-10"
+                style={{ background: 'rgba(107, 114, 128, 0.2)', width: '80vw', left: 0, right: '20vw' }}
+                onClick={handleCloseDetails}
+              ></div>
+              <AppointmentDetails
+                appointmentId={selectedAppointmentId}
+                onClose={handleCloseDetails}
+              />
+            </>
+          )}
         </div>
       </div>
     </div>

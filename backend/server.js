@@ -101,16 +101,8 @@ mongoose.connect(process.env.MONGODB_URI, {
   process.exit(1);
 });
 
-// Notification Schema
-const notificationSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  message: { type: String, required: true },
-  type: { type: String, enum: ["appointment_request", "appointment_accepted", "appointment_rejected"], required: true },
-  appointmentId: { type: mongoose.Schema.Types.ObjectId, ref: "AppointmentRequest" },
-  read: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now },
-});
-const Notification = mongoose.model("Notification", notificationSchema);
+// Notification Schema (import from models/Notification.js)
+const Notification = require("./models/Notification");
 
 // Socket.IO Authentication
 io.use((socket, next) => {

@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const notificationSchema = new mongoose.Schema({
-  user: {
+  userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
     required: true,
@@ -12,12 +12,20 @@ const notificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ["appointment_request", "appointment_accepted", "appointment_rejected"],
+    enum: [
+      "appointment_request",
+      "appointment_accepted",
+      "appointment_rejected",
+      "appointment_status_updated",
+      "prescription_added",
+      "review_added",
+      "appointment_request_sent"
+    ],
     required: true,
   },
   appointmentId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "AppointmentRequest",
+    ref: "Appointment",
   },
   read: {
     type: Boolean,
@@ -29,4 +37,6 @@ const notificationSchema = new mongoose.Schema({
   },
 });
 
-module.exports = mongoose.model("Notification", notificationSchema);
+module.exports =
+  mongoose.models.Notification ||
+  mongoose.model("Notification", notificationSchema);
