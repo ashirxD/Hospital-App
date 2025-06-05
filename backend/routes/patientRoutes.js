@@ -117,11 +117,12 @@ router.put("/profile", upload, handleMulterError, async (req, res) => {
       return res.status(401).json({ message: "Unauthorized: Invalid user" });
     }
 
-    const { name, phoneNumber, twoFAEnabled } = req.body;
+    const { name, phoneNumber, twoFAEnabled, profilePicture } = req.body;
     console.log("[PUT /profile] Received:", {
       name,
       phoneNumber,
       twoFAEnabled,
+      profilePicture,
       file: req.file ? req.file.filename : null,
       timestamp: new Date().toISOString(),
     });
@@ -146,29 +147,44 @@ router.put("/profile", upload, handleMulterError, async (req, res) => {
       twoFAEnabled: twoFAEnabled === "true" || twoFAEnabled === true,
     };
 
-    if (req.file) {
-      updateData.profilePicture = `/Uploads/${req.file.filename}`;
-      console.log("[PUT /profile] Updated profilePicture:", updateData.profilePicture, { timestamp: new Date().toISOString() });
-    } else if (req.body.profilePicture === "null") {
-      updateData.profilePicture = null;
-    }
-
     const user = await User.findById(req.user.id);
     if (!user) {
       console.error("[PUT /profile] User not found:", req.user.id, { timestamp: new Date().toISOString() });
       return res.status(404).json({ message: "User not found" });
     }
 
-    // If a new profile picture is uploaded, delete the old one
-    if (req.file && user.profilePicture) {
-      const oldPicturePath = path.join(__dirname, "..", user.profilePicture);
-      try {
-        if (fs.existsSync(oldPicturePath)) {
-          fs.unlinkSync(oldPicturePath);
-          console.log("[PUT /profile] Deleted old profile picture:", oldPicturePath, { timestamp: new Date().toISOString() });
+    // Handle profile picture updates
+    if (req.file) {
+      // New file uploaded
+      updateData.profilePicture = `/Uploads/${req.file.filename}`;
+      // Delete old picture if exists
+      if (user.profilePicture) {
+        const oldPicturePath = path.join(__dirname, "..", user.profilePicture);
+        try {
+          if (fs.existsSync(oldPicturePath)) {
+            fs.unlinkSync(oldPicturePath);
+            console.log("[PUT /profile] Deleted old profile picture:", oldPicturePath);
+          }
+        } catch (err) {
+          console.error("[PUT /profile] Error deleting old picture:", err);
+          // Don't fail the request if file deletion fails
         }
-      } catch (err) {
-        console.error("[PUT /profile] Error deleting old picture:", err, { timestamp: new Date().toISOString() });
+      }
+    } else if (profilePicture === "null") {
+      // Profile picture removal requested
+      updateData.profilePicture = null;
+      // Delete existing picture if exists
+      if (user.profilePicture) {
+        const oldPicturePath = path.join(__dirname, "..", user.profilePicture);
+        try {
+          if (fs.existsSync(oldPicturePath)) {
+            fs.unlinkSync(oldPicturePath);
+            console.log("[PUT /profile] Deleted profile picture:", oldPicturePath);
+          }
+        } catch (err) {
+          console.error("[PUT /profile] Error deleting picture:", err);
+          // Don't fail the request if file deletion fails
+        }
       }
     }
 
@@ -179,7 +195,7 @@ router.put("/profile", upload, handleMulterError, async (req, res) => {
     ).select("-passwordHash -otp -otpExpires");
 
     if (!updatedUser) {
-      console.error("[PUT /profile] Failed to update user:", req.user.id, { timestamp: new Date().toISOString() });
+      console.error("[PUT /profile] Failed to update user:", req.user.id);
       return res.status(500).json({ message: "Failed to update profile" });
     }
 
@@ -189,14 +205,17 @@ router.put("/profile", upload, handleMulterError, async (req, res) => {
       phoneNumber: updatedUser.phoneNumber,
       profilePicture: updatedUser.profilePicture,
       twoFAEnabled: updatedUser.twoFAEnabled,
-      timestamp: new Date().toISOString(),
     });
-    res.json(updatedUser);
+
+    // Send the updated user data back
+    res.json({
+      ...updatedUser.toObject(),
+      message: "Profile updated successfully"
+    });
   } catch (err) {
     console.error("[PUT /profile] Error:", {
       message: err.message,
       stack: err.stack,
-      timestamp: new Date().toISOString(),
     });
     if (err.code === 11000 && err.keyPattern.phoneNumber) {
       return res.status(400).json({ message: "Phone number is already in use" });
@@ -213,21 +232,50 @@ router.get("/doctors", async (req, res) => {
       return res.status(401).json({ message: "Unauthorized: Invalid user" });
     }
 
+    // First get all doctors
     const doctors = await User.find({ role: "doctor" }).select(
       "_id name specialization profilePicture availability"
     );
+
+    // Get ratings for all doctors
+    const ratings = await Review.aggregate([
+      {
+        $group: {
+          _id: "$reviewee",
+          averageRating: { $avg: "$rating" },
+          totalReviews: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Create a map of doctor ratings
+    const ratingsMap = ratings.reduce((acc, curr) => {
+      acc[curr._id.toString()] = {
+        averageRating: curr.averageRating,
+        totalReviews: curr.totalReviews
+      };
+      return acc;
+    }, {});
+
+    // Add ratings to each doctor
+    const doctorsWithRatings = doctors.map(doctor => ({
+      ...doctor.toObject(),
+      averageRating: ratingsMap[doctor._id.toString()]?.averageRating || 0,
+      totalReviews: ratingsMap[doctor._id.toString()]?.totalReviews || 0
+    }));
+
     console.log("[GET /doctors] Fetched:", {
-      count: doctors.length,
-      ids: doctors.map((d) => d._id.toString()),
+      count: doctorsWithRatings.length,
+      ids: doctorsWithRatings.map((d) => d._id.toString()),
       timestamp: new Date().toISOString(),
     });
 
-    if (!doctors || doctors.length === 0) {
+    if (!doctorsWithRatings || doctorsWithRatings.length === 0) {
       console.warn("[GET /doctors] No doctors found", { timestamp: new Date().toISOString() });
       return res.status(404).json({ message: "No doctors found" });
     }
 
-    res.json(doctors);
+    res.json(doctorsWithRatings);
   } catch (err) {
     console.error("[GET /doctors] Error:", {
       message: err.message,
@@ -284,88 +332,111 @@ router.get("/doctors/:id", async (req, res) => {
 // Get available slots for a doctor
 router.get("/doctors/:id/slots", async (req, res) => {
   try {
-    if (!req.user || !req.user.id) {
-      console.error("[GET /doctors/:id/slots] Unauthorized: No user ID", { timestamp: new Date().toISOString() });
-      return res.status(401).json({ message: "Unauthorized: Invalid user" });
-    }
-
-    const doctorId = req.params.id;
+    const { id } = req.params;
     const { date } = req.query;
-    console.log("[GET /doctors/:id/slots] Fetching slots:", { doctorId, date, timestamp: new Date().toISOString() });
 
-    if (!doctorId.match(/^[0-9a-fA-F]{24}$/)) {
-      console.error("[GET /doctors/:id/slots] Invalid doctorId format:", doctorId, { timestamp: new Date().toISOString() });
-      return res.status(400).json({ message: "Invalid doctor ID format" });
+    if (!date) {
+      return res.status(400).json({
+        slots: [],
+        message: "Date is required",
+        isAvailable: false
+      });
     }
 
-    if (!date || !moment(date, "YYYY-MM-DD", true).isValid()) {
-      console.error("[GET /doctors/:id/slots] Invalid date format:", date, { timestamp: new Date().toISOString() });
-      return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD" });
+    const doctor = await User.findById(id);
+    if (!doctor) {
+      return res.status(404).json({
+        slots: [],
+        message: "Doctor not found",
+        isAvailable: false
+      });
     }
 
-    // Only allow today or future dates for slots
-    const today = moment().startOf("day");
-    const selectedDate = moment(date, "YYYY-MM-DD");
-    if (selectedDate.isBefore(today, 'day')) {
-      console.warn("[GET /doctors/:id/slots] Attempt to fetch slots for past date:", { date, today: today.format("YYYY-MM-DD") });
-      return res.status(400).json({ message: "Cannot fetch slots for past dates" });
+    // Check if the date is valid
+    const selectedDate = moment(date);
+    if (!selectedDate.isValid()) {
+      return res.status(400).json({
+        slots: [],
+        message: "Invalid date format",
+        isAvailable: false
+      });
     }
 
+    // Check if doctor is on vacation
+    const isOnVacation = doctor.availability.vacations?.some(vacation => {
+      const vacStart = moment(vacation.startDate).startOf('day');
+      const vacEnd = moment(vacation.endDate).endOf('day');
+      return selectedDate.isBetween(vacStart, vacEnd, 'day', '[]');
+    });
 
-    const doctor = await User.findById(doctorId).select("availability role");
-    if (!doctor || doctor.role !== "doctor") {
-      console.error("[GET /doctors/:id/slots] Doctor not found:", doctorId, { timestamp: new Date().toISOString() });
-      return res.status(404).json({ message: "Doctor not found" });
+    if (isOnVacation) {
+      return res.status(200).json({
+        slots: [],
+        message: "Doctor is on vacation during this period",
+        isAvailable: false,
+        doctorAvailability: doctor.availability
+      });
     }
 
-    // Check if doctor is available on the selected day
-    const dayOfWeek = selectedDate.format("dddd");
-    if (!doctor.availability.days?.includes(dayOfWeek)) {
-      console.log("[GET /doctors/:id/slots] Doctor not available on:", dayOfWeek, { timestamp: new Date().toISOString() });
-      return res.json([]); // Return empty array if doctor not available
+    // Check if the day is in doctor's available days
+    const dayOfWeek = selectedDate.format('dddd');
+    if (!doctor.availability.days.includes(dayOfWeek)) {
+      return res.status(200).json({
+        slots: [],
+        message: "Doctor is not available on this day",
+        isAvailable: false,
+        doctorAvailability: doctor.availability,
+        reason: "not_working_day",
+        dayOfWeek: dayOfWeek
+      });
     }
 
-    // Generate slots based on doctor's availability
-    const startTime = moment(`${date} ${doctor.availability.startTime}`, "YYYY-MM-DD HH:mm");
-    const endTime = moment(`${date} ${doctor.availability.endTime}`, "YYYY-MM-DD HH:mm");
+    // Generate slots
     const slots = [];
-    const slotDuration = 30; // 30 minutes per slot
+    const startTime = moment(doctor.availability.startTime, 'HH:mm');
+    const endTime = moment(doctor.availability.endTime, 'HH:mm');
+    const slotDuration = doctor.availability.slotDuration || 30;
+    const breakTime = doctor.availability.breakTime || 0;
 
     let currentTime = startTime.clone();
-    while (currentTime.add(slotDuration, "minutes").isSameOrBefore(endTime)) {
-      const slotStart = currentTime.clone().subtract(slotDuration, "minutes");
+    while (currentTime.add(slotDuration, 'minutes').isBefore(endTime)) {
+      const slotStart = currentTime.clone().subtract(slotDuration, 'minutes');
       const slotEnd = currentTime.clone();
 
-      // Check if slot is already booked
-      const bookedAppointment = await Appointment.findOne({
-        doctor: doctorId,
-        date: selectedDate.format("YYYY-MM-DD"),
-        time: slotStart.format("HH:mm"),
-        status: "accepted",
+      // Check if this slot overlaps with any existing appointments
+      const existingAppointment = await Appointment.findOne({
+        doctor: id,
+        date: selectedDate.format('YYYY-MM-DD'),
+        time: slotStart.format('HH:mm'),
+        status: { $in: ['accepted', 'pending'] }
       });
 
-      if (!bookedAppointment) {
+      if (!existingAppointment) {
         slots.push({
-          start: slotStart.format("HH:mm"),
-          end: slotEnd.format("HH:mm"),
+          start: slotStart.format('HH:mm'),
+          end: slotEnd.format('HH:mm')
         });
       }
+
+      // Add break time
+      currentTime.add(breakTime, 'minutes');
     }
 
-    console.log("[GET /doctors/:id/slots] Generated slots:", {
-      count: slots.length,
-      date,
-      doctorId,
-      timestamp: new Date().toISOString(),
+    return res.status(200).json({
+      slots,
+      message: slots.length > 0 ? "Available slots found" : "No slots available for this date",
+      isAvailable: true,
+      doctorAvailability: doctor.availability,
+      reason: slots.length === 0 ? "all_booked" : "available"
     });
-    res.json(slots);
-  } catch (err) {
-    console.error("[GET /doctors/:id/slots] Error:", {
-      message: err.message,
-      stack: err.stack,
-      timestamp: new Date().toISOString(),
+
+  } catch (error) {
+    console.error("Error fetching slots:", error);
+    return res.status(500).json({
+      slots: [],
+      message: "Error fetching slots",
+      isAvailable: false
     });
-    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -1245,6 +1316,124 @@ router.put("/notifications/read-all", async (req, res) => {
       message: "Server error",
       error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
+  }
+});
+
+// Get patient records
+router.get("/records", async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      console.error("[GET /records] Unauthorized: No user ID", { timestamp: new Date().toISOString() });
+      return res.status(401).json({ message: "Unauthorized: Invalid user" });
+    }
+
+    const PatientRecord = require("../models/PatientRecord");
+    const record = await PatientRecord.findOne({ patient: req.user.id });
+
+    if (!record) {
+      console.log("[GET /records] No records found for patient:", req.user.id);
+      return res.json(null);
+    }
+
+    console.log("[GET /records] Successfully fetched records for patient:", req.user.id);
+    res.json(record);
+  } catch (err) {
+    console.error("[GET /records] Error:", {
+      message: err.message,
+      stack: err.stack,
+      timestamp: new Date().toISOString(),
+    });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Create or update patient records
+router.post("/records", async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      console.error("[POST /records] Unauthorized: No user ID", { timestamp: new Date().toISOString() });
+      return res.status(401).json({ message: "Unauthorized: Invalid user" });
+    }
+
+    const {
+      gender,
+      bloodGroup,
+      height,
+      weight,
+      allergies,
+      currentMedications,
+      chronicConditions,
+      previousSurgeries,
+      familyHistory
+    } = req.body;
+
+    // Validate required fields
+    if (!gender || !bloodGroup || !height || !weight) {
+      console.error("[POST /records] Missing required fields", {
+        received: { gender, bloodGroup, height, weight },
+        timestamp: new Date().toISOString(),
+      });
+      return res.status(400).json({ message: "Missing required fields" });
+    }
+
+    // Validate numeric fields
+    if (isNaN(height) || height < 0 || height > 300) {
+      return res.status(400).json({ message: "Invalid height value" });
+    }
+    if (isNaN(weight) || weight < 0 || weight > 500) {
+      return res.status(400).json({ message: "Invalid weight value" });
+    }
+
+    const PatientRecord = require("../models/PatientRecord");
+    
+    // Try to find existing record
+    let record = await PatientRecord.findOne({ patient: req.user.id });
+
+    if (record) {
+      // Update existing record
+      record.gender = gender;
+      record.bloodGroup = bloodGroup;
+      record.height = height;
+      record.weight = weight;
+      record.allergies = allergies || '';
+      record.currentMedications = currentMedications || '';
+      record.chronicConditions = chronicConditions || '';
+      record.previousSurgeries = previousSurgeries || '';
+      record.familyHistory = familyHistory || '';
+      record.lastUpdated = new Date();
+    } else {
+      // Create new record
+      record = new PatientRecord({
+        patient: req.user.id,
+        gender,
+        bloodGroup,
+        height,
+        weight,
+        allergies: allergies || '',
+        currentMedications: currentMedications || '',
+        chronicConditions: chronicConditions || '',
+        previousSurgeries: previousSurgeries || '',
+        familyHistory: familyHistory || ''
+      });
+    }
+
+    await record.save();
+
+    console.log("[POST /records] Successfully saved records for patient:", req.user.id);
+    res.json({
+      message: "Patient records saved successfully",
+      record
+    });
+  } catch (err) {
+    console.error("[POST /records] Error:", {
+      message: err.message,
+      stack: err.stack,
+      timestamp: new Date().toISOString(),
+    });
+    if (err.code === 11000) {
+      return res.status(400).json({ message: "Patient record already exists" });
+    }
+    res.status(500).json({ message: "Server error" });
   }
 });
 

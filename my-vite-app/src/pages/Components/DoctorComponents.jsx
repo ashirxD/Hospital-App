@@ -10,8 +10,27 @@ import {
   ChatBubbleLeftRightIcon,
   InformationCircleIcon,
 } from "@heroicons/react/24/outline";
-
 import { useNavigate } from "react-router-dom";
+import { useDispatch } from "react-redux";
+import { setAvailability } from "../../redux/slices/authSlice";
+import { Calendar } from "react-calendar";
+import "react-calendar/dist/Calendar.css";
+import moment from "moment";
+import {
+  Grid,
+  Paper,
+  Box,
+  Avatar,
+  Typography,
+  Button,
+  Alert,
+  Container,
+  CircularProgress,
+  Fade,
+  Zoom,
+} from '@mui/material';
+import { Description as DescriptionIcon } from '@mui/icons-material';
+import { styled } from '@mui/material/styles';
 
 
 export const Sidebar = ({ activeSection, setActiveSection, handleLogout }) => {
@@ -79,8 +98,6 @@ export const Sidebar = ({ activeSection, setActiveSection, handleLogout }) => {
   );
 };
 
-
-
 export const Header = ({
   userData = {},
   availability = { days: [], startTime: "", endTime: "" },
@@ -90,8 +107,50 @@ export const Header = ({
   markNotificationAsRead,
   markAllNotificationsAsRead,
   error,
+  averageRating = 0,
+  totalReviews = 0,
+  socketStatus,
 }) => {
+  console.log("[Header] Rendering with rating data:", { averageRating, totalReviews });
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const renderStars = (rating) => {
+    console.log("[Header] Rendering stars for rating:", rating);
+    const stars = [];
+    const fullStars = Math.floor(rating);
+    const hasHalfStar = rating % 1 >= 0.5;
+
+    // Add full stars
+    for (let i = 0; i < fullStars; i++) {
+      stars.push(
+        <span key={`full-${i}`} className="text-yellow-400">
+          ★
+        </span>
+      );
+    }
+
+    // Add half star if needed
+    if (hasHalfStar) {
+      stars.push(
+        <span key="half" className="text-yellow-400">
+          ⯨
+        </span>
+      );
+    }
+
+    // Add empty stars
+    const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+    for (let i = 0; i < emptyStars; i++) {
+      stars.push(
+        <span key={`empty-${i}`} className="text-gray-300">
+          ★
+        </span>
+      );
+    }
+
+    console.log("[Header] Generated stars:", stars.length);
+    return stars;
+  };
 
   return (
     <div className="mb-8 flex items-center justify-between relative">
@@ -122,6 +181,20 @@ export const Header = ({
               {availability.startTime} - {availability.endTime}
             </p>
           )}
+          <div className="flex items-center mt-2">
+            {averageRating > 0 ? (
+              <>
+                <div className="flex items-center">
+                  {renderStars(averageRating)}
+                </div>
+                <span className="ml-2 text-gray-600">
+                  {averageRating.toFixed(1)}/5 ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
+                </span>
+              </>
+            ) : (
+              <span className="text-gray-500">No ratings yet</span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -157,9 +230,7 @@ export const Header = ({
   );
 };
 
-
 // Appointments Table Component
-
 export const AppointmentsTable = React.memo(({ appointments = [], error, normalizeTime, onViewDetails }) => {
   console.log("[AppointmentsTable] Rendering, appointments:", appointments);
   if (!Array.isArray(appointments)) {
@@ -260,20 +331,90 @@ export const AppointmentsTable = React.memo(({ appointments = [], error, normali
   );
 });
 
-// Patients List Component
-export const PatientsList = ({ uniquePatients = [], error: propError }) => {
+
+// Custom styled components
+const StyledPaper = styled(Paper)(({ theme }) => ({
+  borderRadius: theme.shape.borderRadius * 2.5,
+  border: 'none',
+  background: 'linear-gradient(145deg, #ffffff, #f8fafc)',
+  boxShadow: '0 3px 15px rgba(0,0,0,0.08)',
+  transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+  '&:hover': {
+    transform: 'translateY(-3px)',
+    boxShadow: '0 5px 20px rgba(0,0,0,0.1)',
+  },
+  padding: theme.spacing(2.5),
+}));
+
+const StyledButton = styled(Button)(({ theme }) => ({
+  borderRadius: theme.shape.borderRadius * 1.5,
+  padding: theme.spacing(0.8, 2),
+  textTransform: 'none',
+  fontWeight: 600,
+  fontSize: '0.9rem',
+  background: 'linear-gradient(45deg, #1a237e, #3949ab)',
+  color: '#ffffff',
+  '&:hover': {
+    background: 'linear-gradient(45deg, #3949ab, #5c6bc0)',
+    transform: 'translateY(-1px)',
+  },
+  transition: 'all 0.3s ease',
+}));
+
+const ProfileImage = styled('img')(({ theme }) => ({
+  width: 60,
+  height: 60,
+  borderRadius: '50%',
+  objectFit: 'cover',
+  border: '3px solid #e3f2fd',
+  boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+  marginRight: theme.spacing(2),
+  backgroundColor: '#e3f2fd',
+  [theme.breakpoints.down('sm')]: {
+    width: 50,
+    height: 50,
+  },
+}));
+
+export const PatientsList = ({ appointments, error }) => {
+  const navigate = useNavigate();
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [errorState, setErrorState] = useState('');
+  const [imageErrors, setImageErrors] = useState({});
+
+  // Function to get valid image URL
+  const getValidImageUrl = (url) => {
+    if (!url) return null;
+    try {
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url;
+      }
+      return `${import.meta.env.VITE_API_URL}${url.startsWith('/') ? url : `/${url}`}`;
+    } catch (err) {
+      console.error('[PatientsList] Error formatting image URL:', err);
+      return null;
+    }
+  };
+
+  // Fallback image URL
+  const fallbackImage = 'https://via.placeholder.com/60?text=Patient';
+
+  const handleImageError = (patientId) => {
+    setImageErrors(prev => ({
+      ...prev,
+      [patientId]: true
+    }));
+  };
 
   useEffect(() => {
     const fetchPatients = async () => {
       try {
         setLoading(true);
-        setError("");
-        const token = localStorage.getItem("token");
+        setErrorState('');
+        const token = localStorage.getItem('token');
         if (!token) {
-          throw new Error("No authentication token found");
+          throw new Error('No authentication token found');
         }
 
         const response = await fetch(`${import.meta.env.VITE_API_URL}/api/doctor/patients`, {
@@ -284,15 +425,20 @@ export const PatientsList = ({ uniquePatients = [], error: propError }) => {
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.message || "Failed to fetch patients");
+          throw new Error(errorData.message || 'Failed to fetch patients');
         }
 
         const data = await response.json();
-        console.log("[PatientsList] Fetched patients:", data);
-        setPatients(data);
+        console.log('[PatientsList] Fetched patients:', data);
+        // Format profile picture URLs
+        const formattedData = data.map(patient => ({
+          ...patient,
+          profilePicture: getValidImageUrl(patient.profilePicture)
+        }));
+        setPatients(formattedData);
       } catch (err) {
-        console.error("[PatientsList] Error fetching patients:", err);
-        setError(err.message || "Failed to fetch patients");
+        console.error('[PatientsList] Error fetching patients:', err);
+        setErrorState(err.message || 'Failed to fetch patients');
       } finally {
         setLoading(false);
       }
@@ -303,83 +449,164 @@ export const PatientsList = ({ uniquePatients = [], error: propError }) => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
-      </div>
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          minHeight: '50vh',
+        }}
+      >
+        <CircularProgress size={40} thickness={4} sx={{ color: '#1a237e' }} />
+        <Typography sx={{ mt: 1.5, color: '#1a237e', fontSize: '0.9rem' }}>
+          Loading patients...
+        </Typography>
+      </Box>
     );
   }
 
   return (
-    <div>
-      <h3 className="text-2xl font-semibold text-gray-800 mb-4">My Patients</h3>
-      {(error || propError) && (
-        <p className="text-red-600 bg-red-100 border border-red-400 rounded p-3 mb-4 animate-fade-in">
-          {error || propError}
-        </p>
-      )}
-      {patients.length === 0 ? (
-        <p className="text-gray-600">No patients with appointments.</p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {patients.map((patient) => (
-            <div
-              key={patient?._id || `patient-${Date.now()}`}
-              className="flex flex-col border border-gray-300 rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition"
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Fade in timeout={500}>
+        <Box>
+          <Typography 
+            variant="h4" 
+            component="h2" 
+            sx={{ 
+              mb: 3, 
+              color: '#1a237e', 
+              fontWeight: 700,
+              fontSize: { xs: '1.6rem', md: '2.2rem' },
+            }}
+          >
+            My Patients
+          </Typography>
+
+          {(error || errorState) && (
+            <Alert 
+              severity="error" 
+              sx={{ 
+                mb: 3, 
+                borderRadius: 1.5, 
+                fontSize: '0.9rem', 
+                bgcolor: '#ffebee',
+                '& .MuiAlert-icon': { fontSize: '1.2rem' },
+              }}
             >
-              <div className="flex items-start space-x-4">
-                <div className="w-20 h-20 flex-shrink-0">
-                  {patient?.profilePicture ? (
-                    <img
-                      src={`${import.meta.env.VITE_API_URL}${patient.profilePicture}?t=${Date.now()}`}
-                      alt={`${patient.name || "Patient"}'s profile`}
-                      className="w-full h-full object-cover rounded-full"
-                      onError={(e) => {
-                        e.target.style.display = "none";
-                        console.error("[PatientsList] Image error:", patient.profilePicture, e);
-                      }}
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gray-100 rounded-full flex items-center justify-center">
-                      <span className="text-2xl text-gray-400">
-                        {patient?.name?.charAt(0) || "?"}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-lg font-semibold text-gray-800 truncate">
-                    {patient?.name || "Unknown"}
-                  </h4>
-                  <p className="text-sm text-gray-600 truncate">
-                    Email: {patient?.email || "N/A"}
-                  </p>
-                  <p className="text-sm text-gray-600 truncate">
-                    Phone: {patient?.phoneNumber || "N/A"}
-                  </p>
-                </div>
-              </div>
-              {patient?.lastAppointment && (
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <h5 className="text-sm font-medium text-gray-700 mb-2">Last Appointment</h5>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-gray-500">Date:</span>
-                      <span className="ml-2 text-gray-800">
-                        {new Date(patient.lastAppointment.date).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Time:</span>
-                      <span className="ml-2 text-gray-800">{patient.lastAppointment.time}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+              {error || errorState}
+            </Alert>
+          )}
+
+          <Grid container spacing={3}>
+            {patients.length > 0 ? (
+              patients.map((patient, index) => (
+                <Grid item xs={12} sm={6} md={4} key={patient._id}>
+                  <Zoom in timeout={500 + index * 100}>
+                    <StyledPaper>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        {patient.profilePicture && !imageErrors[patient._id] ? (
+                          <ProfileImage
+                            src={patient.profilePicture}
+                            alt={patient.name || 'Patient'}
+                            onError={() => handleImageError(patient._id)}
+                          />
+                        ) : (
+                          <Avatar
+                            sx={{
+                              width: 60,
+                              height: 60,
+                              border: '3px solid #e3f2fd',
+                              bgcolor: '#e3f2fd',
+                              marginRight: 2,
+                              [theme.breakpoints.down('sm')]: {
+                                width: 50,
+                                height: 50,
+                              }
+                            }}
+                          >
+                            <PersonIcon sx={{ fontSize: 30, color: '#1a237e' }} />
+                          </Avatar>
+                        )}
+                        <Box>
+                          <Typography 
+                            variant="h6" 
+                            sx={{ 
+                              fontWeight: 600, 
+                              color: '#1a237e',
+                              fontSize: { xs: '1.2rem', md: '1.4rem' },
+                            }}
+                          >
+                            {patient.name || 'Unknown Patient'}
+                          </Typography>
+                          <Typography 
+                            variant="body2" 
+                            sx={{ 
+                              color: 'text.secondary',
+                              fontSize: '0.9rem',
+                            }}
+                          >
+                            {patient.email || 'No email provided'}
+                          </Typography>
+                        </Box>
+                      </Box>
+
+                      <Box sx={{ mt: 1.5 }}>
+                        <Typography 
+                          variant="body2" 
+                          sx={{ 
+                            color: 'text.secondary', 
+                            fontSize: '0.8rem',
+                            fontWeight: 500,
+                          }}
+                        >
+                          Last Appointment:
+                        </Typography>
+                        <Typography 
+                          variant="body2" 
+                          sx={{ fontSize: '0.9rem' }}
+                        >
+                          {patient.lastAppointment?.date 
+                            ? new Date(patient.lastAppointment.date).toLocaleDateString() 
+                            : 'Not specified'}{' '}
+                          {patient.lastAppointment?.time || ''}
+                        </Typography>
+                      </Box>
+
+                      <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                        <StyledButton
+                          startIcon={<DescriptionIcon />}
+                          onClick={() => {
+                            console.log("[PatientsList] Navigating to records for patient:", patient._id);
+                            navigate(`/doctor-dashboard/patients/${patient._id}/records`);
+                          }}
+                        >
+                          View Records
+                        </StyledButton>
+                      </Box>
+                    </StyledPaper>
+                  </Zoom>
+                </Grid>
+              ))
+            ) : (
+              <Grid item xs={12}>
+                <Alert 
+                  severity="info" 
+                  sx={{ 
+                    borderRadius: 1.5, 
+                    fontSize: '0.9rem',
+                    bgcolor: '#e3f2fd',
+                    '& .MuiAlert-icon': { fontSize: '1.2rem' },
+                  }}
+                >
+                  No patients found.
+                </Alert>
+              </Grid>
+            )}
+          </Grid>
+        </Box>
+      </Fade>
+    </Container>
   );
 };
 
@@ -496,19 +723,157 @@ export const AppointmentRequestsTable = ({
 
 // Edit Profile Form Component
 export const EditProfileForm = ({
-  editData = {},
-  availability = { days: [], startTime: "", endTime: "" },
-  handleInputChange,
-  handleFileChange,
-  handleRemovePicture,
-  handleProfileUpdate,
-  hasProfilePicture,
-  previewUrl,
-  error,
-  success,
-  isLoading,
+  user,
+  onUpdate,
+  onCancel,
 }) => {
-  console.log("[EditProfileForm] Rendering, editData:", editData);
+  const [formData, setFormData] = useState(() => {
+    // Try to load saved form data from localStorage
+    try {
+      const savedFormData = localStorage.getItem('editProfileFormData');
+      if (savedFormData) {
+        const parsedData = JSON.parse(savedFormData);
+        // Ensure all required fields are present
+        return {
+          name: parsedData.name || user?.name || "",
+          specialization: parsedData.specialization || user?.specialization || "",
+          profilePicture: parsedData.profilePicture || user?.profilePicture || null,
+          availability: {
+            startTime: parsedData.availability?.startTime || user?.availability?.startTime || "",
+            endTime: parsedData.availability?.endTime || user?.availability?.endTime || "",
+            days: parsedData.availability?.days || user?.availability?.days || [],
+            slotDuration: parsedData.availability?.slotDuration || user?.availability?.slotDuration || 30,
+            breakTime: parsedData.availability?.breakTime || user?.availability?.breakTime || 0,
+            vacations: parsedData.availability?.vacations || user?.availability?.vacations || []
+          }
+        };
+      }
+    } catch (error) {
+      console.error('Error loading saved form data:', error);
+    }
+
+    // Default form data if no saved data exists
+    return {
+      name: user?.name || "",
+      specialization: user?.specialization || "",
+      profilePicture: user?.profilePicture || null,
+      availability: {
+        startTime: user?.availability?.startTime || "",
+        endTime: user?.availability?.endTime || "",
+        days: user?.availability?.days || [],
+        slotDuration: user?.availability?.slotDuration || 30,
+        breakTime: user?.availability?.breakTime || 0,
+        vacations: user?.availability?.vacations || []
+      }
+    };
+  });
+
+  const handleRemovePicture = () => {
+    // Update form data
+    setFormData(prev => ({
+      ...prev,
+      profilePicture: null
+    }));
+
+    // Clear the file input value
+    const fileInput = document.getElementById('profilePicture');
+    if (fileInput) {
+      fileInput.value = '';
+    }
+
+    // Clear saved form data
+    localStorage.removeItem('editProfileFormData');
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setFormData(prev => ({
+        ...prev,
+        profilePicture: file
+      }));
+    }
+  };
+
+  const [selectedVacationDates, setSelectedVacationDates] = useState([]);
+  const [vacationReason, setVacationReason] = useState("");
+  const [showVacationCalendar, setShowVacationCalendar] = useState(false);
+  const dispatch = useDispatch();
+
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    
+    if (name.startsWith('availability.')) {
+      const field = name.split('.')[1];
+      if (field === 'days') {
+        // Handle days selection to allow multiple selections
+        setFormData(prev => ({
+          ...prev,
+          availability: {
+            ...prev.availability,
+            days: checked 
+              ? [...(prev.availability.days || []), value]
+              : (prev.availability.days || []).filter(day => day !== value)
+          }
+        }));
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          availability: {
+            ...prev.availability,
+            [field]: value
+          }
+        }));
+      }
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value
+      }));
+    }
+  };
+
+  const handleVacationAdd = () => {
+    if (selectedVacationDates.length !== 2) {
+      alert("Please select start and end dates for your vacation");
+      return;
+    }
+
+    const [startDate, endDate] = selectedVacationDates;
+    const newVacation = {
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      reason: vacationReason
+    };
+
+    setFormData(prev => ({
+      ...prev,
+      availability: {
+        ...prev.availability,
+        vacations: [...(prev.availability.vacations || []), newVacation]
+      }
+    }));
+
+    setSelectedVacationDates([]);
+    setVacationReason("");
+    setShowVacationCalendar(false);
+  };
+
+  const handleVacationRemove = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      availability: {
+        ...prev.availability,
+        vacations: prev.availability.vacations.filter((_, i) => i !== index)
+      }
+    }));
+  };
+
+  const handleProfileUpdate = (e) => {
+    e.preventDefault();
+    onUpdate(formData);
+  };
+
   const daysOfWeek = [
     "Monday",
     "Tuesday",
@@ -519,223 +884,319 @@ export const EditProfileForm = ({
     "Sunday",
   ];
 
+  const slotDurations = [
+    { value: 30, label: "30 minutes" },
+    { value: 45, label: "45 minutes" },
+    { value: 60, label: "1 hour" },
+    { value: 75, label: "1 hour 15 minutes" },
+    { value: 90, label: "1 hour 30 minutes" },
+    { value: 105, label: "1 hour 45 minutes" },
+    { value: 120, label: "2 hours" },
+  ];
+
+  const breakTimes = [
+    { value: 0, label: "No break" },
+    { value: 5, label: "5 minutes" },
+    { value: 10, label: "10 minutes" },
+    { value: 15, label: "15 minutes" },
+    { value: 20, label: "20 minutes" },
+    { value: 25, label: "25 minutes" },
+    { value: 30, label: "30 minutes" },
+  ];
+
   return (
-    <div>
+    <div className="bg-white p-6 rounded-lg shadow-md">
       <h3 className="text-2xl font-semibold text-gray-800 mb-6">Edit Profile</h3>
-      <div className="bg-white rounded-xl shadow-lg p-8 max-w-3xl">
-        {success && (
-          <p className="text-green-600 bg-green-50 border border-green-200 rounded-lg p-4 mb-6 font-medium animate-fade-in">
-            {success}
-          </p>
-        )}
-        {error && (
-          <p className="text-red-600 bg-red-50 border border-red-200 rounded-lg p-4 mb-6 font-medium animate-fade-in">
-            {error}
-          </p>
-        )}
-        <form onSubmit={handleProfileUpdate}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div className="space-y-6">
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                  Name *
-                </label>
-                <input
-                  type="text"
-                  id="name"
-                  name="name"
-                  value={editData.name || ""}
-                  onChange={handleInputChange}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow hover:shadow-sm"
-                  required
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="specialization"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Specialization
-                </label>
-                <input
-                  type="text"
-                  id="specialization"
-                  name="specialization"
-                  value={editData.specialization || ""}
-                  onChange={handleInputChange}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow hover:shadow-sm"
-                />
-              </div>
+      <form onSubmit={handleProfileUpdate}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div className="space-y-6">
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                Name *
+              </label>
+              <input
+                type="text"
+                id="name"
+                name="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow hover:shadow-sm"
+                required
+              />
             </div>
-            <div className="space-y-6">
-              <div>
-                <label
-                  htmlFor="startTime"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Availability Start Time
-                </label>
-                <input
-                  type="time"
-                  id="startTime"
-                  name="startTime"
-                  value={availability.startTime || ""}
-                  onChange={handleInputChange}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow hover:shadow-sm"
-                  required
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="endTime"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Availability End Time
-                </label>
-                <input
-                  type="time"
-                  id="endTime"
-                  name="endTime"
-                  value={availability.endTime || ""}
-                  onChange={handleInputChange}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow hover:shadow-sm"
-                  required
-                />
-              </div>
+            <div>
+              <label htmlFor="specialization" className="block text-sm font-medium text-gray-700 mb-1">
+                Specialization *
+              </label>
+              <input
+                type="text"
+                id="specialization"
+                name="specialization"
+                value={formData.specialization}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow hover:shadow-sm"
+                required
+              />
             </div>
-          </div>
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Shift Days</label>
-            <div className="flex flex-wrap gap-2">
-              {daysOfWeek.map((day) => (
-                <label
-                  key={day}
-                  className={`flex items-center justify-center px-4 py-2 rounded-full border cursor-pointer transition-all duration-200 ${
-                    availability.days?.includes(day)
-                      ? "bg-blue-500 text-white border-blue-500 shadow-md"
-                      : "bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    name="days"
-                    value={day}
-                    checked={availability.days?.includes(day) || false}
-                    onChange={handleInputChange}
-                    className="sr-only"
-                  />
-                  {day}
+
+            {/* Vacation Section - Moved here */}
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <label className="block text-sm font-medium text-gray-700">
+                  Vacation Dates
                 </label>
-              ))}
-            </div>
-          </div>
-          <div className="mb-6">
-            <label
-              htmlFor="profilePicture"
-              className="block text-sm font-medium text-gray-700 mb-2"
-            >
-              Profile Picture
-            </label>
-            {hasProfilePicture && (previewUrl || editData.profilePicture) ? (
-              <div className="relative mb-4 w-24 h-24">
-                <img
-                  src={
-                    previewUrl ||
-                    `${import.meta.env.VITE_API_URL}${editData.profilePicture}?t=${Date.now()}`
-                  }
-                  alt="Profile Preview"
-                  className="w-24 h-24 rounded-full object-cover border-2 border-gray-200 shadow-sm"
-                  onError={(e) =>
-                    console.error("[EditProfileForm] Image error:", editData.profilePicture, e)
-                  }
-                />
                 <button
                   type="button"
-                  onClick={handleRemovePicture}
-                  className="absolute top-[-8px] right-[-8px] bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-transform transform hover:scale-110"
-                  title="Remove Picture"
+                  onClick={() => setShowVacationCalendar(!showVacationCalendar)}
+                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 text-sm"
                 >
-                  <XMarkIcon className="w-4 h-4" />
+                  <span>{showVacationCalendar ? "Hide Calendar" : "Add Vacation"}</span>
+                  <svg
+                    className={`w-4 h-4 transform transition-transform ${showVacationCalendar ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </button>
               </div>
-            ) : (
-              <input
-                type="file"
-                id="profilePicture"
-                name="profilePicture"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="w-full p-3 border border-gray-300 rounded-lg file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-shadow hover:shadow-sm"
-              />
-            )}
-          </div>
-          <div className="mb-6 flex items-center space-x-4">
-            <label
-              htmlFor="twoFAEnabled"
-              className="text-sm font-medium text-gray-700"
-            >
-              Two-Factor Authentication
-            </label>
-            <div className="relative inline-block w-12 h-6">
-              <input
-                type="checkbox"
-                id="twoFAEnabled"
-                name="twoFAEnabled"
-                checked={editData.twoFAEnabled || false}
-                onChange={handleInputChange}
-                className="absolute opacity-0 w-full h-full cursor-pointer"
-              />
-              <div
-                className={`w-full h-full rounded-full transition-colors duration-200 ${
-                  editData.twoFAEnabled ? "bg-blue-500" : "bg-gray-300"
-                }`}
-              ></div>
-              <div
-                className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-200 ${
-                  editData.twoFAEnabled ? "translate-x-6" : "translate-x-0"
-                }`}
-              ></div>
+
+              {showVacationCalendar && (
+                <div className="bg-gray-50 p-3 rounded-lg mb-4 border border-gray-200">
+                  <div className="mb-3">
+                    <Calendar
+                      onChange={setSelectedVacationDates}
+                      value={selectedVacationDates}
+                      selectRange={true}
+                      className="w-full border rounded-lg"
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <label htmlFor="vacationReason" className="block text-sm font-medium text-gray-700 mb-1">
+                      Reason for Vacation
+                    </label>
+                    <input
+                      type="text"
+                      id="vacationReason"
+                      value={vacationReason}
+                      onChange={(e) => setVacationReason(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow hover:shadow-sm"
+                      placeholder="Enter reason for vacation"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleVacationAdd}
+                    className="w-full px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2 text-sm"
+                  >
+                    <span>Add Vacation Period</span>
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+
+              {formData.availability.vacations && formData.availability.vacations.length > 0 && (
+                <div className="space-y-2">
+                  {formData.availability.vacations.map((vacation, index) => (
+                    <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-200">
+                      <div>
+                        <p className="text-sm text-gray-700">
+                          {new Date(vacation.startDate).toLocaleDateString()} - {new Date(vacation.endDate).toLocaleDateString()}
+                        </p>
+                        {vacation.reason && (
+                          <p className="text-xs text-gray-500 mt-1">Reason: {vacation.reason}</p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleVacationRemove(index)}
+                        className="text-red-600 hover:text-red-700 p-1 rounded-full hover:bg-red-50 transition-colors"
+                      >
+                        <XMarkIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Profile Picture Section */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Profile Picture
+              </label>
+              <div className="flex flex-col items-start space-y-4">
+                {formData.profilePicture ? (
+                  <div className="relative group">
+                    <img
+                      src={typeof formData.profilePicture === 'string' 
+                        ? `${import.meta.env.VITE_API_URL}${formData.profilePicture}?t=${Date.now()}`
+                        : URL.createObjectURL(formData.profilePicture)
+                      }
+                      alt="Profile Preview"
+                      className="w-24 h-24 rounded-full object-cover border-2 border-gray-200 shadow-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRemovePicture}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-all duration-200 transform hover:scale-110 shadow-lg"
+                      title="Remove Picture"
+                    >
+                      <XMarkIcon className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-full">
+                    <input
+                      type="file"
+                      id="profilePicture"
+                      name="profilePicture"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="w-full p-2 border border-gray-300 rounded-lg file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-shadow hover:shadow-sm"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
+
+          <div className="space-y-6">
+            <div>
+              <label htmlFor="availability.startTime" className="block text-sm font-medium text-gray-700 mb-1">
+                Availability Start Time *
+              </label>
+              <input
+                type="time"
+                id="availability.startTime"
+                name="availability.startTime"
+                value={formData.availability.startTime}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow hover:shadow-sm"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="availability.endTime" className="block text-sm font-medium text-gray-700 mb-1">
+                Availability End Time *
+              </label>
+              <input
+                type="time"
+                id="availability.endTime"
+                name="availability.endTime"
+                value={formData.availability.endTime}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow hover:shadow-sm"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="availability.slotDuration" className="block text-sm font-medium text-gray-700 mb-1">
+                Appointment Duration *
+              </label>
+              <select
+                id="availability.slotDuration"
+                name="availability.slotDuration"
+                value={formData.availability.slotDuration}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow hover:shadow-sm"
+                required
+              >
+                {slotDurations.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="availability.breakTime" className="block text-sm font-medium text-gray-700 mb-1">
+                Break Time Between Appointments *
+              </label>
+              <select
+                id="availability.breakTime"
+                name="availability.breakTime"
+                value={formData.availability.breakTime}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow hover:shadow-sm"
+                required
+              >
+                {breakTimes.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Working Days *
+              </label>
+              <div className="grid grid-cols-7 gap-2">
+                {daysOfWeek.map((day) => (
+                  <label
+                    key={day}
+                    className={`relative flex flex-col items-center justify-center p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
+                      formData.availability.days.includes(day)
+                        ? 'bg-blue-600 border-blue-600 text-white'
+                        : 'bg-white border-gray-300 hover:border-blue-400 text-gray-700'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      name="availability.days"
+                      value={day}
+                      checked={formData.availability.days.includes(day)}
+                      onChange={handleInputChange}
+                      className="sr-only"
+                    />
+                    <span className="text-sm font-medium">{day.slice(0, 3)}</span>
+                    {formData.availability.days.includes(day) && (
+                      <svg
+                        className="w-4 h-4 mt-1"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    )}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end space-x-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-6 py-3 rounded-lg text-gray-700 font-semibold transition-all duration-200 bg-gray-100 hover:bg-gray-200 hover:shadow-lg"
+          >
+            Cancel
+          </button>
           <button
             type="submit"
-            disabled={isLoading}
-            className={`w-full p-3 rounded-lg text-white font-semibold transition-all duration-200 ${
-              isLoading
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-blue-600 hover:bg-blue-700 hover:shadow-lg"
-            }`}
+            className="px-6 py-3 rounded-lg text-white font-semibold transition-all duration-200 bg-blue-600 hover:bg-blue-700 hover:shadow-lg"
           >
-            {isLoading ? (
-              <span className="flex items-center justify-center">
-                <svg
-                  className="animate-spin h-5 w-5 mr-2 text-white"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                  ></path>
-                </svg>
-                Updating...
-              </span>
-            ) : (
-              "Update Profile"
-            )}
+            Update Profile
           </button>
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
   );
 };

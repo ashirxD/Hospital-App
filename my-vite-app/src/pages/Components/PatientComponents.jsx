@@ -572,6 +572,28 @@ export function DoctorsSection({ doctors, error, navigate }) {
                       {doctor.availability.startTime} - {doctor.availability.endTime}
                     </p>
                   )}
+                  {/* Add ratings display */}
+                  <div className="mt-2 flex items-center">
+                    <div className="flex items-center">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <svg
+                          key={star}
+                          className={`w-4 h-4 ${
+                            star <= (doctor.averageRating || 0)
+                              ? "text-yellow-400"
+                              : "text-gray-300"
+                          }`}
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                      ))}
+                    </div>
+                    <span className="ml-2 text-sm text-gray-600">
+                      {doctor.averageRating ? doctor.averageRating.toFixed(1) : "No ratings"} ({doctor.totalReviews || 0} reviews)
+                    </span>
+                  </div>
                 </div>
               </div>
               <button
@@ -624,40 +646,12 @@ export function DoctorSlotsPage() {
   const [doctor, setDoctor] = useState(null);
   const [slots, setSlots] = useState({});
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [error, setError] = useState("");
   const [selectedDate, setSelectedDate] = useState(moment().format("YYYY-MM-DD"));
   const [sliderDates, setSliderDates] = useState([]);
   const dispatch = useDispatch();
   const sliderRef = useRef(null);
-
-  // Add handleLogout function
-  const handleLogout = () => {
-    dispatch(logout());
-    navigate("/auth/signin", { replace: true });
-  };
-
-  // Add handleSectionChange function
-  const handleSectionChange = (section) => {
-    switch (section) {
-      case "appointments":
-        navigate("/patient");
-        break;
-      case "medicalRecords":
-        navigate("/patient/medical-records");
-        break;
-      case "doctors":
-        navigate("/patient/doctors");
-        break;
-      case "edit-profile":
-        navigate("/patient/edit-profile");
-        break;
-      case "chat":
-        navigate("/patient/chat");
-        break;
-      default:
-        navigate("/patient");
-    }
-  };
 
   // Extend sliderDates when user clicks forward and reaches the end
   const handleSliderChange = (oldIndex, newIndex) => {
@@ -704,8 +698,6 @@ export function DoctorSlotsPage() {
     );
   };
 
-  // PrevArrow: pass through all props to support react-slick navigation
-  // PrevArrow: always visible, only pass onClick and type (react-slick expects type="button")
   const PrevArrow = ({ onClick, currentSlide }) => {
     const isAtStart = currentSlide === 0;
     return (
@@ -760,11 +752,40 @@ export function DoctorSlotsPage() {
     ref: sliderRef,
   };
 
+  // Add handleLogout function
+  const handleLogout = () => {
+    dispatch(logout());
+    navigate("/auth/signin", { replace: true });
+  };
+
+  // Add handleSectionChange function
+  const handleSectionChange = (section) => {
+    switch (section) {
+      case "appointments":
+        navigate("/patient");
+        break;
+      case "medicalRecords":
+        navigate("/patient/medical-records");
+        break;
+      case "doctors":
+        navigate("/patient/doctors");
+        break;
+      case "edit-profile":
+        navigate("/patient/edit-profile");
+        break;
+      case "chat":
+        navigate("/patient/chat");
+        break;
+      default:
+        navigate("/patient");
+    }
+  };
+
   // Add effect to handle initial dates
   useEffect(() => {
     const initialDates = [];
     const today = moment();
-    for (let i = 0; i < 14; i++) { // Start with 14 days instead of 7
+    for (let i = 0; i < 14; i++) {
       const date = today.clone().add(i, "days");
       initialDates.push({
         date: date.format("YYYY-MM-DD"),
@@ -773,11 +794,11 @@ export function DoctorSlotsPage() {
     }
     console.log("[DoctorSlotsPage] Setting initial dates:", initialDates);
     setSliderDates(initialDates);
-    setSelectedDate(today.format("YYYY-MM-DD"));
   }, []);
 
+  // Effect to fetch doctor data
   useEffect(() => {
-    const fetchDoctorAndSlots = async () => {
+    const fetchDoctor = async () => {
       setIsLoading(true);
       setError("");
       try {
@@ -810,29 +831,6 @@ export function DoctorSlotsPage() {
         }
         const doctorData = await doctorResponse.json();
         setDoctor(doctorData);
-
-        const slotsData = {};
-        const today = moment();
-        for (let i = 0; i < 7; i++) {
-          const date = today.clone().add(i, "days").format("YYYY-MM-DD");
-          console.log("[DoctorSlotsPage] Fetching slots for:", { date, doctorId: id });
-          const slotsResponse = await fetch(
-            `${import.meta.env.VITE_API_URL}/api/patient/doctors/${id}/slots?date=${date}`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            }
-          );
-          if (!slotsResponse.ok) {
-            const text = await slotsResponse.text();
-            console.error("[DoctorSlotsPage] Failed to fetch slots for", date, ":", text);
-            slotsData[date] = [];
-            continue;
-          }
-          const daySlots = await slotsResponse.json();
-          console.log("[DoctorSlotsPage] Slots response for", date, ":", daySlots);
-          slotsData[date] = Array.isArray(daySlots) ? daySlots : [];
-        }
-        setSlots(slotsData);
       } catch (err) {
         console.error("[DoctorSlotsPage] Error:", err);
         setError("Failed to connect to server");
@@ -840,12 +838,25 @@ export function DoctorSlotsPage() {
         setIsLoading(false);
       }
     };
-    fetchDoctorAndSlots();
+    fetchDoctor();
   }, [id, navigate, dispatch]);
 
-  // Fetch slots for a specific date when selected
+  // Effect to fetch slots when doctor data is loaded or date changes
+  useEffect(() => {
+    if (doctor && selectedDate) {
+      console.log("[DoctorSlotsPage] Fetching slots for date:", selectedDate);
+      fetchSlotsForDate(selectedDate);
+    }
+  }, [doctor, selectedDate]);
+
+  // Fetch slots for a specific date
   const fetchSlotsForDate = async (date) => {
-    if (slots[date]) return; // Skip if already fetched
+    if (!doctor) {
+      console.log("[DoctorSlotsPage] Cannot fetch slots: doctor data not loaded");
+      return;
+    }
+
+    setIsLoadingSlots(true);
     try {
       const token = localStorage.getItem("token");
       if (!token) {
@@ -867,22 +878,31 @@ export function DoctorSlotsPage() {
         setSlots((prev) => ({ ...prev, [date]: [] }));
         return;
       }
-      const daySlots = await slotsResponse.json();
-      console.log("[DoctorSlotsPage] Slots response for", date, ":", daySlots);
-      setSlots((prev) => ({
-        ...prev,
-        [date]: Array.isArray(daySlots) ? daySlots : [],
-      }));
+      const response = await slotsResponse.json();
+      console.log("[DoctorSlotsPage] Slots response for", date, ":", response);
+      
+      // Set slots based on the response reason
+      if (response.reason === "not_working_day") {
+        setSlots((prev) => ({ ...prev, [date]: null }));
+      } else {
+        // Check if the response has slots array
+        const daySlots = response.slots || [];
+        setSlots((prev) => ({
+          ...prev,
+          [date]: Array.isArray(daySlots) ? daySlots : [],
+        }));
+      }
     } catch (err) {
       console.error("[DoctorSlotsPage] Error fetching slots for", date, ":", err);
       setSlots((prev) => ({ ...prev, [date]: [] }));
+    } finally {
+      setIsLoadingSlots(false);
     }
   };
 
   // Handle date selection
   const handleDateSelect = (date) => {
     setSelectedDate(date);
-    fetchSlotsForDate(date);
   };
 
   if (isLoading) {
@@ -939,42 +959,66 @@ export function DoctorSlotsPage() {
           </div>
 
           {/* Slots Display */}
-          {Object.keys(slots).length === 0 || Object.values(slots).every((slotsForDate) => slotsForDate.length === 0) ? (
-            <p className="text-gray-600 text-center text-lg">No available slots for the next 7 days.</p>
+          {isLoadingSlots ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading slots...</p>
+            </div>
+          ) : doctor?.availability?.vacations?.some(vacation => {
+            const vacStart = moment(vacation.startDate).startOf('day');
+            const vacEnd = moment(vacation.endDate).endOf('day');
+            return moment(selectedDate).isBetween(vacStart, vacEnd, 'day', '[]');
+          }) ? (
+            <div className="text-center py-8">
+              <div className="max-w-md mx-auto p-6 bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm">
+                <div className="flex items-center justify-center mb-4">
+                  <svg className="w-12 h-12 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-yellow-800 mb-2">Doctor is on Vacation</h3>
+                <p className="text-yellow-700 mb-4">Dr. {doctor?.name} is not available during this period.</p>
+                <p className="text-yellow-600 text-sm">Please select a different date for your appointment.</p>
+              </div>
+            </div>
+          ) : !slots[selectedDate] ? (
+            <div className="text-center py-8">
+              <div className="max-w-md mx-auto p-6 bg-gray-50 border border-gray-200 rounded-lg shadow-sm">
+                <div className="flex items-center justify-center mb-4">
+                  <svg className="w-12 h-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">Not Available Today</h3>
+                <p className="text-gray-700 mb-4">Dr. {doctor?.name} does not work on {moment(selectedDate).format('dddd')}s.</p>
+                <p className="text-gray-600 text-sm">Please select a different day for your appointment.</p>
+              </div>
+            </div>
+          ) : slots[selectedDate].length === 0 ? (
+            <div className="text-center py-8">
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg max-w-md mx-auto">
+                <p className="text-blue-700 font-medium">All slots are booked for this date.</p>
+                <p className="text-blue-600 text-sm mt-1">Please try selecting a different time slot or date.</p>
+              </div>
+            </div>
           ) : (
             <div className="space-y-6">
-              {Object.entries(slots)
-                .filter(([date, slotsForDate]) => {
-                  return (
-                    Array.isArray(slotsForDate) &&
-                    slotsForDate.length > 0 &&
-                    selectedDate === date
-                  );
-                })
-                .map(([date, slotsForDate]) => {
-                  if (!moment(date, "YYYY-MM-DD", true).isValid()) {
-                    console.warn("[DoctorSlotsPage] Invalid date key:", date);
-                    return null;
-                  }
-                  return (
-                    <div key={date} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                      <h4 className="text-xl font-semibold text-gray-800 mb-4">
-                        {moment(date).format("dddd, MMMM Do YYYY")}
-                      </h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        {slotsForDate.map((slot, index) => (
-                          <SlotCard
-                            key={`${date}-${slot.start}-${index}`}
-                            date={date}
-                            slot={slot}
-                            doctorId={id}
-                            navigate={navigate}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <h4 className="text-xl font-semibold text-gray-800 mb-4">
+                  {moment(selectedDate).format("dddd, MMMM Do YYYY")}
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {slots[selectedDate].map((slot, index) => (
+                    <SlotCard
+                      key={`${selectedDate}-${slot.start}-${index}`}
+                      date={selectedDate}
+                      slot={slot}
+                      doctorId={id}
+                      navigate={navigate}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -984,15 +1028,6 @@ export function DoctorSlotsPage() {
 }
 
 // Book Appointment Page
-// In PatientComponents.jsx
-
-// In PatientComponents.jsx
-
-// In PatientComponents.jsx
-;
-
-console.log("[BookAppointmentPage] react-icons imported:", { FaCheckCircle, FaExclamationCircle });
-
 export function BookAppointmentPage() {
   const { doctorId } = useParams();
   const navigate = useNavigate();
@@ -1096,6 +1131,12 @@ export function BookAppointmentPage() {
       setSuccess("Appointment request sent successfully!");
       setReason("");
       setIsLoading(false);
+
+      // Add delay before redirecting
+      setTimeout(() => {
+        window.location.replace("/patient");
+      }, 1500);
+      
     } catch (err) {
       console.error("[BookAppointmentPage] Error:", err);
       setError("Failed to connect to server");

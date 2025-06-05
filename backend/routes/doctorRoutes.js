@@ -110,7 +110,7 @@ router.put("/profile", upload, handleMulterError, async (req, res) => {
       return res.status(401).json({ message: "Unauthorized: Invalid user" });
     }
 
-    const { name, specialization, twoFAEnabled, startTime, endTime, days } = req.body;
+    const { name, specialization, twoFAEnabled, startTime, endTime, days, slotDuration, breakTime, vacations } = req.body;
     console.log("[PUT /profile] Received:", {
       name,
       specialization,
@@ -118,12 +118,58 @@ router.put("/profile", upload, handleMulterError, async (req, res) => {
       startTime,
       endTime,
       days,
+      slotDuration,
+      breakTime,
+      vacations: vacations ? JSON.parse(vacations) : undefined,
       file: req.file ? req.file.filename : null,
     });
 
     if (!name || name.trim().length === 0) {
       console.error("[PUT /profile] Validation failed: Name required");
       return res.status(400).json({ message: "Name is required" });
+    }
+
+    // Validate slot duration
+    const validDurations = [30, 45, 60, 75, 90, 105, 120];
+    const parsedSlotDuration = parseInt(slotDuration);
+    if (isNaN(parsedSlotDuration) || !validDurations.includes(parsedSlotDuration)) {
+      console.error("[PUT /profile] Validation failed: Invalid slot duration:", slotDuration);
+      return res.status(400).json({ 
+        message: "Invalid slot duration. Must be one of: 30, 45, 60, 75, 90, 105, 120 minutes" 
+      });
+    }
+
+    // Validate break time
+    const parsedBreakTime = parseInt(breakTime);
+    if (isNaN(parsedBreakTime) || parsedBreakTime < 0 || parsedBreakTime > 30 || parsedBreakTime % 5 !== 0) {
+      console.error("[PUT /profile] Validation failed: Invalid break time:", breakTime);
+      return res.status(400).json({ 
+        message: "Invalid break time. Must be between 0 and 30 minutes, in multiples of 5" 
+      });
+    }
+
+    // Parse days and vacations
+    let parsedDays = [];
+    let parsedVacations = [];
+    try {
+      parsedDays = days ? JSON.parse(days) : [];
+      parsedVacations = vacations ? JSON.parse(vacations) : [];
+    } catch (err) {
+      console.error("[PUT /profile] Error parsing JSON:", err);
+      return res.status(400).json({ message: "Invalid JSON format for days or vacations" });
+    }
+
+    // Validate days
+    const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    if (!Array.isArray(parsedDays) || !parsedDays.every(day => validDays.includes(day))) {
+      console.error("[PUT /profile] Validation failed: Invalid days:", parsedDays);
+      return res.status(400).json({ message: "Invalid working days" });
+    }
+
+    // Validate vacations
+    if (!Array.isArray(parsedVacations)) {
+      console.error("[PUT /profile] Validation failed: Invalid vacations format");
+      return res.status(400).json({ message: "Invalid vacations format" });
     }
 
     const updateData = {
@@ -133,7 +179,10 @@ router.put("/profile", upload, handleMulterError, async (req, res) => {
       availability: {
         startTime: startTime || "",
         endTime: endTime || "",
-        days: days ? JSON.parse(days) : [],
+        days: parsedDays,
+        slotDuration: parsedSlotDuration,
+        breakTime: parsedBreakTime,
+        vacations: parsedVacations
       },
     };
 
@@ -665,7 +714,7 @@ router.post("/appointment/:id/prescription", async (req, res) => {
     }
 
     // Validate frequency structure
-    const requiredTimes = ['morning', 'afternoon', 'evening', 'night'];
+    const requiredTimes = ['morning', 'afternoon', 'night'];
     const hasValidFrequency = requiredTimes.every(time => 
       typeof frequency[time] === 'number' && 
       frequency[time] >= 0 && 
@@ -701,7 +750,6 @@ router.post("/appointment/:id/prescription", async (req, res) => {
       frequency: {
         morning: parseInt(frequency.morning) || 0,
         afternoon: parseInt(frequency.afternoon) || 0,
-        evening: parseInt(frequency.evening) || 0,
         night: parseInt(frequency.night) || 0
       },
       durationDays: parseInt(durationDays),
@@ -946,8 +994,14 @@ router.get("/reviews/stats", async (req, res) => {
       return res.status(401).json({ message: "Unauthorized: Invalid user" });
     }
 
+    console.log("[GET /reviews/stats] Fetching stats for doctor:", req.user.id);
+
     const stats = await Review.aggregate([
-      { $match: { reviewee: mongoose.Types.ObjectId(req.user.id) } },
+      { 
+        $match: { 
+          reviewee: new mongoose.Types.ObjectId(req.user.id) 
+        } 
+      },
       {
         $group: {
           _id: null,
@@ -960,7 +1014,10 @@ router.get("/reviews/stats", async (req, res) => {
       }
     ]);
 
+    console.log("[GET /reviews/stats] Raw stats:", stats);
+
     if (stats.length === 0) {
+      console.log("[GET /reviews/stats] No reviews found");
       return res.json({
         averageRating: 0,
         totalReviews: 0,
@@ -991,11 +1048,7 @@ router.get("/reviews/stats", async (req, res) => {
       }
     };
 
-    console.log("[GET /reviews/stats] Fetched stats:", {
-      doctorId: req.user.id,
-      stats: response,
-      timestamp: new Date().toISOString()
-    });
+    console.log("[GET /reviews/stats] Final response:", response);
 
     res.json(response);
   } catch (err) {
@@ -1003,6 +1056,212 @@ router.get("/reviews/stats", async (req, res) => {
       message: err.message,
       stack: err.stack,
       timestamp: new Date().toISOString()
+    });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Add vacation dates
+router.post("/vacations", async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      console.error("[POST /vacations] Unauthorized: No user ID");
+      return res.status(401).json({ message: "Unauthorized: Invalid user" });
+    }
+
+    const { startDate, endDate, reason } = req.body;
+    console.log("[POST /vacations] Received:", { startDate, endDate, reason });
+
+    if (!startDate || !endDate) {
+      console.error("[POST /vacations] Validation failed: Dates required");
+      return res.status(400).json({ message: "Start date and end date are required" });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      console.error("[POST /vacations] Validation failed: Invalid date format");
+      return res.status(400).json({ message: "Invalid date format" });
+    }
+
+    if (start > end) {
+      console.error("[POST /vacations] Validation failed: Start date after end date");
+      return res.status(400).json({ message: "Start date must be before end date" });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      console.error("[POST /vacations] User not found:", req.user.id);
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check for overlapping vacations
+    const overlappingVacation = user.availability.vacations?.some(vacation => {
+      const vacStart = new Date(vacation.startDate);
+      const vacEnd = new Date(vacation.endDate);
+      return (start <= vacEnd && end >= vacStart);
+    });
+
+    if (overlappingVacation) {
+      console.error("[POST /vacations] Validation failed: Overlapping vacation dates");
+      return res.status(400).json({ message: "These dates overlap with an existing vacation" });
+    }
+
+    // Add new vacation
+    if (!user.availability.vacations) {
+      user.availability.vacations = [];
+    }
+    user.availability.vacations.push({
+      startDate: start,
+      endDate: end,
+      reason: reason || ""
+    });
+
+    await user.save();
+
+    console.log("[POST /vacations] Added vacation:", {
+      userId: user._id,
+      startDate: start,
+      endDate: end,
+      reason
+    });
+
+    res.status(201).json({ message: "Vacation dates added successfully" });
+  } catch (err) {
+    console.error("[POST /vacations] Error:", {
+      message: err.message,
+      stack: err.stack,
+    });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Remove vacation dates
+router.delete("/vacations/:vacationId", async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      console.error("[DELETE /vacations/:vacationId] Unauthorized: No user ID");
+      return res.status(401).json({ message: "Unauthorized: Invalid user" });
+    }
+
+    const { vacationId } = req.params;
+    console.log("[DELETE /vacations/:vacationId] Received:", { vacationId });
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      console.error("[DELETE /vacations/:vacationId] User not found:", req.user.id);
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const vacationIndex = user.availability.vacations?.findIndex(
+      v => v._id.toString() === vacationId
+    );
+
+    if (vacationIndex === -1) {
+      console.error("[DELETE /vacations/:vacationId] Vacation not found:", vacationId);
+      return res.status(404).json({ message: "Vacation not found" });
+    }
+
+    user.availability.vacations.splice(vacationIndex, 1);
+    await user.save();
+
+    console.log("[DELETE /vacations/:vacationId] Removed vacation:", {
+      userId: user._id,
+      vacationId
+    });
+
+    res.json({ message: "Vacation dates removed successfully" });
+  } catch (err) {
+    console.error("[DELETE /vacations/:vacationId] Error:", {
+      message: err.message,
+      stack: err.stack,
+    });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get patient details
+router.get("/patients/:patientId", async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      console.error("[GET /patients/:patientId] Unauthorized: No user ID");
+      return res.status(401).json({ message: "Unauthorized: Invalid user" });
+    }
+
+    const { patientId } = req.params;
+    console.log("[GET /patients/:patientId] Fetching patient:", patientId);
+
+    // Verify the patient has had appointments with this doctor
+    const hasAppointments = await Appointment.exists({
+      doctor: req.user.id,
+      patient: patientId
+    });
+
+    if (!hasAppointments) {
+      console.error("[GET /patients/:patientId] No appointments found for patient:", patientId);
+      return res.status(403).json({ message: "Access denied: No appointments with this patient" });
+    }
+
+    const patient = await User.findById(patientId).select("name email phoneNumber profilePicture");
+    if (!patient) {
+      console.error("[GET /patients/:patientId] Patient not found:", patientId);
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    console.log("[GET /patients/:patientId] Fetched patient:", {
+      id: patient._id,
+      name: patient.name
+    });
+    res.json(patient);
+  } catch (err) {
+    console.error("[GET /patients/:patientId] Error:", {
+      message: err.message,
+      stack: err.stack,
+    });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get patient medical records
+router.get("/patients/:patientId/records", async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      console.error("[GET /patients/:patientId/records] Unauthorized: No user ID");
+      return res.status(401).json({ message: "Unauthorized: Invalid user" });
+    }
+
+    const { patientId } = req.params;
+    console.log("[GET /patients/:patientId/records] Fetching records for patient:", patientId);
+
+    // Verify the patient has had appointments with this doctor
+    const hasAppointments = await Appointment.exists({
+      doctor: req.user.id,
+      patient: patientId
+    });
+
+    if (!hasAppointments) {
+      console.error("[GET /patients/:patientId/records] No appointments found for patient:", patientId);
+      return res.status(403).json({ message: "Access denied: No appointments with this patient" });
+    }
+
+    const PatientRecord = require("../models/PatientRecord");
+    const records = await PatientRecord.findOne({ patient: patientId });
+
+    if (!records) {
+      console.log("[GET /patients/:patientId/records] No records found for patient:", patientId);
+      return res.json(null);
+    }
+
+    console.log("[GET /patients/:patientId/records] Fetched records for patient:", {
+      patientId,
+      lastUpdated: records.lastUpdated
+    });
+    res.json(records);
+  } catch (err) {
+    console.error("[GET /patients/:patientId/records] Error:", {
+      message: err.message,
+      stack: err.stack,
     });
     res.status(500).json({ message: "Server error" });
   }

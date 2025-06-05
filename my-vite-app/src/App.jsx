@@ -135,34 +135,32 @@ function AuthRedirect({ children }) {
 // RedirectHandler
 // App.jsx
 function RedirectHandler() {
-  const location = useLocation();
-  const path = location.pathname.toLowerCase();
+  const { pathname } = useLocation();
   const { isAuthenticated, role } = useSelector((state) => state.auth);
 
-  console.log("[RedirectHandler] Processing:", {
-    path,
-    isAuthenticated,
-    role,
-    timestamp: new Date().toISOString(),
-  });
+  console.log("[RedirectHandler] Current path:", pathname);
 
-  if (path === "/doctor-dashboard" || path === "/doctor-dashboard/") {
-    console.log("[RedirectHandler] Exact match for /doctor-dashboard");
+  // Handle doctor dashboard routes
+  if (pathname.startsWith("/doctor-dashboard")) {
+    console.log("[RedirectHandler] Handling doctor dashboard route");
     return (
       <ProtectedRoute allowedRole="doctor">
         <DoctorDashboard />
       </ProtectedRoute>
     );
   }
-  if (path.startsWith("/doctor-dashboard/appointment")) {
-    console.log("[RedirectHandler] Handling /doctor-dashboard/appointment/*");
+
+  // Handle patient records view within doctor dashboard
+  if (pathname.startsWith("/doctor-dashboard/patients/") && pathname.includes("/records")) {
+    console.log("[RedirectHandler] Handling patient records view");
     return (
       <ProtectedRoute allowedRole="doctor">
         <DoctorDashboard />
       </ProtectedRoute>
     );
   }
-  if (path === "/patient-dashboard" || path === "/patient-dashboard/") {
+
+  if (pathname === "/patient-dashboard" || pathname === "/patient-dashboard/") {
     console.log("[RedirectHandler] Exact match for /patient-dashboard");
     return (
       <ProtectedRoute allowedRole="patient">
@@ -170,7 +168,7 @@ function RedirectHandler() {
       </ProtectedRoute>
     );
   }
-  if (path.startsWith("/patient-dashboard/appointments")) {
+  if (pathname.startsWith("/patient-dashboard/appointments")) {
     console.log("[RedirectHandler] Handling /patient-dashboard/appointments/*");
     return (
       <ProtectedRoute allowedRole="patient">
@@ -179,11 +177,11 @@ function RedirectHandler() {
     );
   }
 
-  if (path.startsWith("/doctor-dashboard")) {
+  if (pathname.startsWith("/doctor-dashboard")) {
     console.log("[RedirectHandler] Path starts with /doctor-dashboard, redirecting to /doctor-dashboard");
     return <Navigate to="/doctor-dashboard" replace />;
   }
-  if (path.startsWith("/patient-dashboard")) {
+  if (pathname.startsWith("/patient-dashboard")) {
     console.log("[RedirectHandler] Path starts with /patient-dashboard, redirecting to /patient-dashboard");
     return <Navigate to="/patient-dashboard" replace />;
   }

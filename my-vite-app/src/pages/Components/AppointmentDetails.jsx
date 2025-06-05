@@ -9,7 +9,7 @@ export default function AppointmentDetails({ appointmentId, onClose }) {
   const [success, setSuccess] = useState("");
   const [prescription, setPrescription] = useState({
     medicineName: "",
-    frequency: { morning: 0, afternoon: 0, evening: 0, night: 0 },
+    frequency: { morning: 0, afternoon: 0, night: 0 },
     durationDays: "",
   });
 
@@ -70,7 +70,7 @@ export default function AppointmentDetails({ appointmentId, onClose }) {
   const resetForm = () => {
     setPrescription({
       medicineName: "",
-      frequency: { morning: 0, afternoon: 0, evening: 0, night: 0 },
+      frequency: { morning: 0, afternoon: 0, night: 0 },
       durationDays: "",
     });
     setError("");
@@ -311,7 +311,6 @@ export default function AppointmentDetails({ appointmentId, onClose }) {
                 <ul className="ml-4 list-disc text-gray-600">
                   {pres.frequency.morning > 0 && <li>Morning: {pres.frequency.morning} dose(s)</li>}
                   {pres.frequency.afternoon > 0 && <li>Afternoon: {pres.frequency.afternoon} dose(s)</li>}
-                  {pres.frequency.evening > 0 && <li>Evening: {pres.frequency.evening} dose(s)</li>}
                   {pres.frequency.night > 0 && <li>Night: {pres.frequency.night} dose(s)</li>}
                 </ul>
                 <p><strong className="text-gray-600">Duration:</strong> {pres.durationDays} days</p>
@@ -345,8 +344,8 @@ export default function AppointmentDetails({ appointmentId, onClose }) {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Dosage Schedule <span className="text-red-500">*</span>
             </label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {["morning", "afternoon", "evening", "night"].map((time) => (
+            <div className="grid grid-cols-3 gap-3">
+              {["morning", "afternoon", "night"].map((time) => (
                 <div key={time}>
                   <label
                     htmlFor={`frequency.${time}`}
@@ -421,9 +420,13 @@ export default function AppointmentDetails({ appointmentId, onClose }) {
                   <div className="flex items-center">
                     {review.reviewer?.profilePicture ? (
                       <img
-                        src={review.reviewer.profilePicture}
+                        src={`${import.meta.env.VITE_API_URL}${review.reviewer.profilePicture}?t=${Date.now()}`}
                         alt={review.reviewer.name}
-                        className="w-8 h-8 rounded-full mr-2"
+                        className="w-8 h-8 rounded-full mr-2 object-cover"
+                        onError={(e) => {
+                          e.target.src = "/fallback-profile.png";
+                          console.error("[AppointmentDetails] Image error:", review.reviewer.profilePicture, e);
+                        }}
                       />
                     ) : (
                       <div className="w-8 h-8 rounded-full bg-gray-200 mr-2 flex items-center justify-center">

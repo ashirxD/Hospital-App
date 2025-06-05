@@ -27,6 +27,29 @@ const userSchema = new mongoose.Schema({
     startTime: { type: String, default: "" },
     endTime: { type: String, default: "" },
     days: { type: [String], default: [] },
+    slotDuration: { 
+      type: Number, 
+      default: 30,
+      enum: [30, 45, 60, 75, 90, 105, 120], // Duration in minutes with 15-min increments
+      required: function() { return this.role === 'doctor'; }
+    },
+    breakTime: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 30,
+      validate: {
+        validator: function(v) {
+          return v % 5 === 0; // Only allow multiples of 5
+        },
+        message: 'Break time must be a multiple of 5 minutes'
+      }
+    },
+    vacations: [{
+      startDate: { type: Date, required: true },
+      endDate: { type: Date, required: true },
+      reason: { type: String, default: "" }
+    }]
   },
 }, { timestamps: true });
 

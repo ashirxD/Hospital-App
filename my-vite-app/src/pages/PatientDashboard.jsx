@@ -15,10 +15,9 @@ import {
 } from "./Components/PatientComponents";
 import { PatientChat } from "./Components/PatientChat";
 import ResponseDetail from "./Components/ResponseDetails";
+import PatientRecords from "./Components/PatientRecords";
 
 
-// Log API URL for debugging
-console.log("[PatientDashboard] VITE_API_URL:", import.meta.env.VITE_API_URL);
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -659,53 +658,74 @@ export default function PatientDashboard() {
 
   // Handle profile picture removal
   const handleRemovePicture = async () => {
-    setError("");
-    setSuccess("");
     try {
       const token = localStorage.getItem("token");
       if (!token) {
-        console.log("[handleRemovePicture] No token, redirecting to signin");
+        console.error("[handleRemovePicture] No token found");
         dispatch(logout());
         navigate("/auth/signin", { replace: true });
         return;
       }
-      if (!editData.name) {
-        console.error("[handleRemovePicture] Name missing:", editData);
-        setError("Cannot remove picture: User name is missing");
-        return;
-      }
-      const apiUrl = `${import.meta.env.VITE_API_URL}/api/patient/profile`;
-      console.log("[handleRemovePicture] Fetching:", apiUrl);
-      const response = await fetch(apiUrl, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          profilePicture: null,
-          name: editData.name,
-          phoneNumber: editData.phoneNumber,
-          twoFAEnabled: editData.twoFAEnabled,
-        }),
-      });
-      if (!response.ok) {
-        const text = await response.text();
-        console.error("[handleRemovePicture] Failed:", response.status, text);
-        setError("Failed to remove profile picture");
-        return;
-      }
-      const data = await response.json();
-      console.log("[handleRemovePicture] Data:", data);
-      setUserData((prev) => ({ ...prev, profilePicture: null }));
-      setEditData((prev) => ({ ...prev, profilePicture: null }));
+
+      // Create FormData for the request
+      const formData = new FormData();
+      formData.append("name", editData.name);
+      formData.append("phoneNumber", editData.phoneNumber || "");
+      formData.append("twoFAEnabled", editData.twoFAEnabled.toString());
+      formData.append("profilePicture", "null");
+
+      // Update local state first
+      setEditData(prev => ({
+        ...prev,
+        profilePicture: null
+      }));
       setPreviewUrl("");
       setHasProfilePicture(false);
-      setSuccess("Profile picture removed successfully");
+
+      // Then update on server
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/patient/profile`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        console.error("[handleRemovePicture] Failed to remove profile picture:", responseData);
+        // Revert local state if server update fails
+        setEditData(prev => ({
+          ...prev,
+          profilePicture: userData.profilePicture
+        }));
+        setPreviewUrl(userData.profilePicture ? `${import.meta.env.VITE_API_URL}${userData.profilePicture}` : "");
+        setHasProfilePicture(!!userData.profilePicture);
+        throw new Error(responseData.message || "Failed to remove profile picture");
+      }
+
+      // Update Redux state
       dispatch({ type: "auth/updateProfilePicture", payload: null });
+
+      // Update local state
+      setUserData(prev => ({
+        ...prev,
+        profilePicture: null
+      }));
+
+      // Update localStorage
+      const authState = JSON.parse(localStorage.getItem('authState') || '{}');
+      if (authState.user) {
+        authState.user.profilePicture = null;
+        localStorage.setItem('authState', JSON.stringify(authState));
+      }
+
+      setSuccess("Profile picture removed successfully");
+      console.log("[handleRemovePicture] Profile picture removed successfully");
     } catch (err) {
       console.error("[handleRemovePicture] Error:", err);
-      setError("Failed to connect to server");
+      setError(err.message || "Failed to remove profile picture. Please try again.");
     }
   };
 
@@ -732,13 +752,19 @@ export default function PatientDashboard() {
         navigate("/auth/signin", { replace: true });
         return;
       }
+
       const formData = new FormData();
       formData.append("name", editData.name);
       formData.append("phoneNumber", editData.phoneNumber);
       formData.append("twoFAEnabled", editData.twoFAEnabled.toString());
+      
+      // Only append profilePicture if it's a File object
       if (editData.profilePicture instanceof File) {
         formData.append("profilePicture", editData.profilePicture);
+      } else if (editData.profilePicture === null) {
+        formData.append("profilePicture", "null");
       }
+
       const apiUrl = `${import.meta.env.VITE_API_URL}/api/patient/profile`;
       console.log("[handleProfileUpdate] Fetching:", apiUrl);
       const response = await fetch(apiUrl, {
@@ -748,13 +774,15 @@ export default function PatientDashboard() {
         },
         body: formData,
       });
+
       if (!response.ok) {
         const text = await response.text();
         console.error("[handleProfileUpdate] Failed:", response.status, text);
-        setError("Failed to update profile");
+        setError(text || "Failed to update profile");
         setIsLoading(false);
         return;
       }
+
       const data = await response.json();
       console.log("[handleProfileUpdate] Data:", data);
       setUserData({
@@ -969,6 +997,9 @@ export default function PatientDashboard() {
                       doctors={doctors}
                       navigate={navigate}
                     />
+                  )}
+                  {activeSection === "medicalRecords" && (
+                    <PatientRecords />
                   )}
                   {activeSection === "doctors" && (
                     <DoctorsSection
